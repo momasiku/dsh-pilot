@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 <#
   desktop-action.ps1 — DSH pilot effector half.
 
@@ -479,17 +479,29 @@ switch ($action) {
         } else {
             if ([string]::IsNullOrWhiteSpace($windowTitle)) { Write-ActionError 'focus requires a title, or an hwnd' }
             $needle = $windowTitle.ToLowerInvariant()
-            $target = $null
-            foreach ($process in (Get-Process | Where-Object { $_.MainWindowHandle -ne 0 })) {
-                if (-not [DshInput]::IsWindowVisible($process.MainWindowHandle)) { continue }
-                $title = [DshInput]::WindowTitle($process.MainWindowHandle)
-                if ($title.ToLowerInvariant().Contains($needle) -or $process.ProcessName.ToLowerInvariant().Contains($needle)) {
-                    if ($null -eq $target) { $target = $process }
-                }
+            # EnumWindows, not Process.MainWindowHandle: an Electron, UWP or tray
+            # window frequently reports no main window handle at all, so a
+            # MainWindowHandle scan cannot find a window that `windows` (which
+            # already enumerates) happily lists.
+            $target = [IntPtr]::Zero
+            $fallback = [IntPtr]::Zero
+            foreach ($handle in [DshInput]::TopLevelWindows()) {
+                if (-not [DshInput]::IsWindowVisible($handle)) { continue }
+                $title = [DshInput]::WindowTitle($handle)
+                if ($title.Length -eq 0) { continue }
+                $owner = [uint32] 0
+                $null = [DshInput]::GetWindowThreadProcessId($handle, [ref] $owner)
+                $processName = Get-ProcessNameSafe $owner
+                $hit = $title.ToLowerInvariant().Contains($needle)
+                if (-not $hit -and $null -ne $processName) { $hit = $processName.ToLowerInvariant().Contains($needle) }
+                if (-not $hit) { continue }
+                if ([DshInput]::IsForeground($handle)) { $target = $handle; break }
+                if ($fallback -eq [IntPtr]::Zero) { $fallback = $handle }
             }
-            if ($null -eq $target) { Write-ActionError "no visible top-level window matches '$windowTitle'; a window hidden to the tray reports no MainWindowHandle, so pass its hwnd instead" }
-            $raised = [DshInput]::Activate($target.MainWindowHandle)
-            if (-not $raised) { $notes += 'Windows refused the explicit foreground request; the taskbar entry may still need a click.' }
+            if ($target -eq [IntPtr]::Zero) { $target = $fallback }
+            if ($target -eq [IntPtr]::Zero) { Write-ActionError "no visible top-level window matches '$windowTitle'; pass an hwnd if the window is hidden to the tray" }
+            $raised = [DshInput]::Activate($target)
+            if (-not $raised) { $notes += "Windows refused the foreground request for '$([DshInput]::WindowTitle($target))'; the taskbar entry may still need a click." }
             Start-Sleep -Milliseconds 220
         }
     }

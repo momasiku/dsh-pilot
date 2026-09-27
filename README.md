@@ -8,6 +8,9 @@ can **look at the actual screen** and then **operate it**.
 - `desktop_control` — moves the pointer, clicks, drags, scrolls, types, sends
   keys, focuses windows, and lists windows, then optionally captures again in
   the same tool result so the effect is visible immediately.
+- `desktop_sequence` — runs a whole batch of those actions in **one** call and
+  looks once at the end, which is where the speed comes from: the cost of desktop
+  work is the number of model ↔ computer round trips, not the click itself.
 
 Two halves, one coordinate space: the sensor (`desktop-probe.ps1`) reports the
 geometry, the effector (`desktop-action.ps1`) consumes the same physical pixels.
@@ -15,6 +18,40 @@ Both PowerShell children make themselves **per-monitor DPI aware** before doing
 anything, which is what makes that true — a DPI-unaware process is lied to by
 Windows and sees this 2560×1600 panel as 1707×1067, so every click computed from
 such a screenshot lands in the wrong place.
+
+## Why a batch beats a call per action
+
+A five-step task — focus the window, click a field, type, press Enter, glance at
+the result — has two very different shapes:
+
+| | one call per action | one `desktop_sequence` call |
+| --- | --- | --- |
+| model round trips | 5 | **1** |
+| screenshots shipped | 4–5 | **1** |
+| image tokens | 4–5 frames | **1 frame** |
+| first failure | discovered a round trip later | reported in the same result |
+
+The batch is also where the safety rails live, because a batch is the moment an
+agent could do real damage in one go:
+
+- **Risk is declared, then enforced.** Low risk (the default) batches freely. A
+  batch declared `medium`/`high`, or one carrying a step marked `risk: "high"`,
+  is refused *before anything touches the desktop* unless the caller passes
+  `confirm: true` — which it does only after the user agreed.
+- **`dryRun: true`** validates the batch and lists the plan without executing.
+- **Stop on the first failure** (default): a refused `focus` can never be
+  followed by typing into whatever window happens to be in front.
+- **Bounded**: `maxSequenceSteps` (default 24) caps one batch.
+
+### Frames that did not change cost nothing
+
+Every capture returns a `frameHash`. When a frame is byte-identical to the
+previous frame of the same session, the image is **not attached again** (and not
+stored again): the result reports `unchanged: true` plus the explanation, and the
+coordinates from the frame the model already has still apply. Pass
+`forceImage: true` when you want to see it anyway. That is what keeps a
+verification loop from re-sending the same picture over and over.
+
 
 ## Tools
 
@@ -45,11 +82,31 @@ foreground window (title, process, class, bounds).
 | `title` | string | window title or process substring; required by `focus`, filters `windows` |
 | `capture` | boolean | capture a fresh frame after acting (default `true`) |
 | `settleMs` | integer | wait before that capture so the screen can repaint (default 750) |
+| `forceImage` | boolean | attach the frame even when it repeats the previous frame of the session |
 
 `type` delivers the text as **one paste** (clipboard set, `Ctrl+V`, clipboard
 restored), so applications see a single insertion rather than per-character
 typing. `windows` returns every visible titled top-level window with its bounds,
 minimized state, and which one is foreground — useful before clicking anything.
+
+### `desktop_sequence`
+
+| parameter | type | meaning |
+| --- | --- | --- |
+| `steps` | array, required | ordered steps; each is one `desktop_control` action **without** its own screenshot, plus optional `settleMs`, `risk`, `riskNote`; action `wait` takes `ms` |
+| `risk` | string | `low` (default) / `medium` / `high`, the risk you declare for the whole batch |
+| `confirm` | boolean | required for a medium/high batch; without it the tool refuses before touching the desktop |
+| `dryRun` | boolean | validate the batch and list the plan without executing anything |
+| `capture` | string | `end` (default) captures one frame after the last step, `none` skips it |
+| `target` | string | `window` (default: the window that was foreground during the batch), `screen` (primary monitor), `all` (whole virtual desktop) |
+| `window` | string | frame this window instead (title/process substring), overriding `target` |
+| `region` | string | crop the end frame as `x,y,width,height` in physical pixels |
+| `forceImage` | boolean | attach the end frame even when it repeats the previous frame |
+| `stopOnError` | boolean | stop at the first failing step (default `true`) |
+| `settleMs` | integer | delay before the end capture so the screen can repaint |
+
+Each step is reported back with its own action, duration in milliseconds, and
+outcome, so one call still tells the model exactly where a batch went wrong.
 
 ## Coordinate contract
 
@@ -90,6 +147,8 @@ script reports the resulting cursor position, so the loop is self-checking.
         captureRetention: 30   # frames kept under .dsh-pilot/
         timeoutMs: 20000       # per-call kill deadline for a helper
         settleMs: 750          # default delay before the automatic capture
+        stepSettleMs: 120      # per-step delay inside a desktop_sequence
+        maxSequenceSteps: 24   # hard cap on the steps of one batch
         alwaysSaveFile: true   # keep the PNG even when no image block is attached
 ```
 
@@ -110,15 +169,24 @@ image input (`deepseek-flash` does).
 ## Developing
 
 The smoke test loads the plugin against the real `@deepseek-ai/dsh-tools` from
-the desktop checkout and exercises both schemas and both renderers without a
-harness restart:
+the desktop checkout and exercises every schema and renderer without a harness
+restart:
 
 ```powershell
 # the package resolves @deepseek-ai/* from the desktop app's node_modules
 New-Item -ItemType Junction -Path node_modules\@deepseek-ai `
   -Target "D:\AGAENT\DSH Desktop\resources\app\node_modules\@deepseek-ai"
 node tools/smoke.mjs "D:\AGAENT\DSH Desktop\resources\app"
+node tools/sequence-smoke.mjs "D:\AGAENT\DSH Desktop\resources\app"
 ```
+
+`sequence-smoke.mjs` is the end-to-end one: it drives a real batch against a
+throwaway window it creates itself (never one of your applications), and the
+window writes back what it received — so "focus, then type, then Enter" is proven
+to have happened in that order, not merely attempted. It also checks the risk
+gate, `dryRun`, the frame deduplication, and that the result matches the closed
+output schema. It needs a full-access shell: the plugin reads its helpers through
+pipes, which a restricted sandbox denies with `EPERM`.
 
 The helper scripts can be driven directly while debugging — they take a UTF-8
 JSON params file and print one JSON result:
