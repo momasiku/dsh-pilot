@@ -1,0 +1,49 @@
+{
+  "name": "dsh-desktop-vision",
+  "version": "0.1.0",
+  "description": "Real-time desktop vision and control for the DeepSeek Harness: screen_view captures the live screen as an image the model can see, desktop_control drives the mouse, keyboard, and windows against the exact same pixel space.",
+  "license": "MIT",
+  "author": "momasiku",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/scripts/desktop-probe.ps1",
+    "lib/scripts/desktop-action.ps1",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "computer-use",
+    "desktop-automation",
+    "screenshot",
+    "vision",
+    "windows"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-attachment": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-llm": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.2"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/momasiku/dsh-desktop-vision.git"
+  },
+  "homepage": "https://github.com/momasiku/dsh-desktop-vision#readme",
+  "bugs": {
+    "url": "https://github.com/momasiku/dsh-desktop-vision/issues"
+  }
+}

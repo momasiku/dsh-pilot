@@ -1,0 +1,11 @@
+# The smoke test links the host packages here; never commit them.
+node_modules/
+
+# Captured frames and helper scratch files (see the README).
+.desktop-vision/
+params*.json
+cancel*.txt
+
+# Local noise
+*.log
+debug.log
