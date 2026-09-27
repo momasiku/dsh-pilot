@@ -1,6 +1,6 @@
 ﻿#requires -Version 5.1
 <#
-  desktop-probe.ps1 — DSH desktop-vision sensor half.
+  desktop-probe.ps1 — DSH pilot sensor half.
 
   Captures the interactive desktop (primary monitor, one monitor, all monitors
   composited, a screen region, or a single top-level window) to a PNG, and

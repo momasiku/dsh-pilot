@@ -2,7 +2,7 @@
 node_modules/
 
 # Captured frames and helper scratch files (see the README).
-.desktop-vision/
+.dsh-pilot/
 params*.json
 cancel*.txt
 

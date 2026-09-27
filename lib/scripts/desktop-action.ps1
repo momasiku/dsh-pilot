@@ -1,6 +1,6 @@
 #requires -Version 5.1
 <#
-  desktop-action.ps1 — DSH desktop-vision effector half.
+  desktop-action.ps1 — DSH pilot effector half.
 
   Performs exactly one mouse / keyboard / window action against the interactive
   desktop. Coordinates are real physical screen pixels, the same space the

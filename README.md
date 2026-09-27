@@ -1,4 +1,4 @@
-# dsh-desktop-vision
+# dsh-pilot
 
 Real-time desktop vision and control for the DeepSeek Harness Desktop: the model
 can **look at the actual screen** and then **operate it**.
@@ -76,7 +76,7 @@ script reports the resulting cursor position, so the loop is self-checking.
   token between every step — during drags, during the settle wait, and before
   the capture — so an interrupted turn stops a gesture in flight instead of
   letting the remaining clicks play out.
-- Captured frames land in `<session cwd>/.desktop-vision/` and are pruned to
+- Captured frames land in `<session cwd>/.dsh-pilot/` and are pruned to
   `captureRetention` (default 30). Pruning never breaks an image the conversation
   already carries, because attachments are stored content-addressed.
 
@@ -84,10 +84,10 @@ script reports the resulting cursor position, so the loop is self-checking.
 
 ```yaml
 - insert:
-    - id: desktop-vision
-      name: dsh-desktop-vision
+    - id: pilot
+      name: dsh-pilot
       config:
-        captureRetention: 30   # frames kept under .desktop-vision/
+        captureRetention: 30   # frames kept under .dsh-pilot/
         timeoutMs: 20000       # per-call kill deadline for a helper
         settleMs: 750          # default delay before the automatic capture
         alwaysSaveFile: true   # keep the PNG even when no image block is attached
@@ -96,7 +96,7 @@ script reports the resulting cursor position, so the loop is self-checking.
 ## Installing
 
 ```powershell
-dsh plugin --profile <name> add "file:E:\path\to\dsh-desktop-vision"
+dsh plugin --profile <name> add "file:E:\path\to\dsh-pilot"
 ```
 
 A plain plugin declares no `dsh.bundle`, so `dsh plugin add` installs it as a
@@ -140,8 +140,8 @@ on disk changed. After editing, copy the changed files into the installed
 package yourself and restart the desktop app:
 
 ```powershell
-$src = "E:\path\to\dsh-desktop-vision"
-$dst = "$env:USERPROFILE\.dsh\profiles\<profile>\node_modules\dsh-desktop-vision"
+$src = "E:\path\to\dsh-pilot"
+$dst = "$env:USERPROFILE\.dsh\profiles\<profile>\node_modules\dsh-pilot"
 Copy-Item "$src\lib\index.js" "$dst\lib\index.js" -Force
 ```
 

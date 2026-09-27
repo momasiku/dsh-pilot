@@ -117,7 +117,7 @@ function assertOutput(toolName, value) {
 
 // --- a frame captured with an attachment attached -----------------------------
 const capture = {
-	path: 'E:\\work\\.desktop-vision\\screen-1.png',
+	path: 'E:\\work\\.dsh-pilot\\screen-1.png',
 	kind: 'primary',
 	imageWidth: 2560,
 	imageHeight: 1600,
