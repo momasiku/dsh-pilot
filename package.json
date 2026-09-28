@@ -1,6 +1,6 @@
 {
   "name": "dsh-pilot",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Real-time desktop vision and control for the DeepSeek Harness: screen_view captures the live screen as an image the model can see, desktop_control drives the mouse, keyboard, and windows against the exact same pixel space; desktop_sequence runs a whole batch of actions in one call and looks once at the end.",
   "license": "MIT",
   "author": "momasiku",

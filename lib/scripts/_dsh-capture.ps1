@@ -1,4 +1,4 @@
-﻿# pilot / _dsh-capture.ps1 - one capture, executed in whatever process called it.
+# pilot / _dsh-capture.ps1 - one capture, executed in whatever process called it.
 #
 # Extracted from desktop-probe.ps1 so the same code serves two callers:
 #   * desktop-probe.ps1  - one frame per process (the fallback path);
@@ -53,6 +53,8 @@ $screenMode = if ($params.PSObject.Properties.Name -contains 'screen' -and $null
 $windowQuery = if ($params.PSObject.Properties.Name -contains 'window' -and $null -ne $params.window) { [string] $params.window } else { '' }
 $regionSpec = if ($params.PSObject.Properties.Name -contains 'region' -and $null -ne $params.region) { [string] $params.region } else { '' }
 $includeCursor = [bool] ($params.PSObject.Properties.Name -contains 'includeCursor' -and $params.includeCursor)
+$rulers = $true
+if ($params.PSObject.Properties.Name -contains 'rulers') { $rulers = [bool] $params.rulers }
 
 
 # ------------------------------------------------------------ screen inventory
@@ -141,6 +143,45 @@ try {
             # A cursor overlay is cosmetic: never fail a capture over it.
         }
     }
+    if ($rulers) {
+        # Coordinate rulers: ticks every $rulerStep pixels along the top and left
+        # edge, each labelled with the SCREEN coordinate it sits at (capture origin
+        # plus the local offset). The model can then read a position straight off
+        # the image instead of counting pixels, which also survives any later
+        # downscaling by the attachment store - the ratio in the envelope says what
+        # the labels have to be multiplied by.
+        try {
+            $rulerStep = if ($bitmap.Width -ge 800) { 200 } else { 100 }
+            $font = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold)
+            $ink = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 255, 64, 64))
+            $shadow = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(200, 0, 0, 0))
+            $tick = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(170, 255, 64, 64)), 1
+            try {
+                for ($x = $rulerStep; $x -lt $bitmap.Width; $x += $rulerStep) {
+                    $graphics.DrawLine($tick, $x, 0, $x, 10)
+                    $label = [string] ([int] $captureDip.X + $x)
+                    $graphics.DrawString($label, $font, $shadow, ($x + 2), 13)
+                    $graphics.DrawString($label, $font, $ink, ($x + 1), 12)
+                }
+                for ($y = $rulerStep; $y -lt $bitmap.Height; $y += $rulerStep) {
+                    $graphics.DrawLine($tick, 0, $y, 10, $y)
+                    $label = [string] ([int] $captureDip.Y + $y)
+                    $graphics.DrawString($label, $font, $shadow, 13, ($y + 2))
+                    $graphics.DrawString($label, $font, $ink, 12, ($y + 1))
+                }
+                $originLabel = ('origin {0},{1}  step {2}' -f [int] $captureDip.X, [int] $captureDip.Y, $rulerStep)
+                $graphics.DrawString($originLabel, $font, $shadow, 15, 30)
+                $graphics.DrawString($originLabel, $font, $ink, 14, 29)
+            } finally {
+                $tick.Dispose()
+                $font.Dispose()
+                $ink.Dispose()
+                $shadow.Dispose()
+            }
+        } catch {
+            # Rulers are an aid: never fail a capture over them.
+        }
+    }
     $directory = Split-Path -Parent $outPath
     if (-not [string]::IsNullOrEmpty($directory) -and -not (Test-Path -LiteralPath $directory)) {
         $null = New-Item -ItemType Directory -Path $directory -Force
@@ -193,6 +234,7 @@ $result = [ordered]@{
     screens          = $screens
     cursor           = $cursorInfo
     foregroundWindow = $foreground
+    rulers           = [bool] $rulers
     capturedAt       = [DateTimeOffset]::Now.ToString('o')
 }
     return $result

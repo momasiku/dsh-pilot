@@ -43,6 +43,26 @@ agent could do real damage in one go:
   followed by typing into whatever window happens to be in front.
 - **Bounded**: `maxSequenceSteps` (default 24) caps one batch.
 
+### What the model is told about coordinates
+
+A frame can come back smaller than it was captured: the attachment store re-encodes
+within its own byte limits. A model that reads a coordinate off a shrunk image and
+clicks it unchanged lands in the wrong place, so the envelope always states the size
+it is actually delivering and, when that differs, the ratio and the multiplier:
+
+```text
+<image_size delivered="1974x873" captured="2261x1000">1974x873</image_size>
+<delivered_scale>delivered 1974x873 = 0.873x capture; multiply image readings by 1.1454 to get screen pixels</delivered_scale>
+```
+
+The coordinate contract that follows every frame is conditional for the same reason:
+it promises "one image pixel is one screen pixel, use x and y as they are" only when
+the delivered frame is the capture, and otherwise says which multiplier to apply.
+
+Frames also carry **coordinate rulers** (on by default; `rulers: false` turns them
+off): ticks every 200 px along the top and left edge, each labelled with the screen
+coordinate it sits at, so a position can be read straight off the image instead of
+counting pixels — and the labels stay meaningful under the multiplier above.
 ### One warm process instead of a process per action
 
 Starting PowerShell and compiling the Win32 bridge costs about a second, and that
