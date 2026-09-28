@@ -189,9 +189,9 @@ try {
 	check('the window received exactly the typed text', received === typed, JSON.stringify(received));
 
 	// ── frame deduplication ────────────────────────────────────────────────
-	// The fixture freezes itself once it has the text, so two captures of it are
-	// byte-identical; `region` is not combined with `window` here because the
-	// sensor treats an explicit window as the frame and ignores the crop.
+	// Two frames of an unchanged area. A 16x16 corner of the desktop is the only
+	// thing here that provably does not move: a window's title bar changes when it
+	// gains or loses focus, and the harness UI animates.
 	// A separate session is used so the first frame of this section is not itself
 	// a duplicate of the batch frame above (the hash memory is per session).
 	const execFresh = {
@@ -202,12 +202,24 @@ try {
 		}
 	};
 	attachments.length = 0;
-	const stable = { window: title, settleMs: 300 };
+	const stable = { target: 'screen', region: '0,0,16,16', settleMs: 250 };
 	const first = await sequence.execute({ ...stable, steps: [{ action: 'wait', ms: 200 }] }, execFresh);
 	const second = await sequence.execute({ ...stable, steps: [{ action: 'wait', ms: 200 }] }, execFresh);
 	check('two consecutive frames of an unchanged area hash alike', first.frameHash === second.frameHash, `${first.frameHash} vs ${second.frameHash}`);
 	check('the first frame is attached and the duplicate is not', first.capture?.image !== undefined && second.unchanged === true && second.capture?.image === undefined && attachments.length === 1, `unchanged=${second.unchanged}, attachments=${attachments.length}`);
 	check('forceImage brings the duplicate back', (await sequence.execute({ ...stable, steps: [{ action: 'wait', ms: 50 }], forceImage: true }, execFresh)).capture?.image !== undefined);
+
+	// ── the one-shot fallback must stay wired ─────────────────────────────
+	// The worker is an optimisation: with useWorker: false the same batch has to
+	// run through desktop-action.ps1 exactly as before.
+	const fallbackRegistry = new Map();
+	const fallbackCtx = { ...ctx, tools: { register(tool) { fallbackRegistry.set(tool.name, tool); } } };
+	apply(fallbackCtx, new Config({ useWorker: false, stepSettleMs: 60, settleMs: 200 }));
+	const viaScript = await fallbackRegistry.get('desktop_sequence').execute({
+		steps: [{ action: 'move', x: 321, y: 222 }],
+		capture: 'none'
+	}, execFresh);
+	check('useWorker=false still runs through the one-shot script', viaScript.executed === 1 && viaScript.failed === 0 && viaScript.steps[0].cursor?.x === 321 && viaScript.steps[0].cursor?.y === 222, `${viaScript.executed}/${viaScript.stepCount} executed, cursor=${JSON.stringify(viaScript.steps[0].cursor)} in ${viaScript.steps[0].ms} ms`);
 } finally {
 	if (Number.isInteger(windowPid)) {
 		spawnSync('taskkill', ['/PID', String(windowPid), '/T', '/F'], { stdio: 'ignore' });

@@ -43,6 +43,28 @@ agent could do real damage in one go:
   followed by typing into whatever window happens to be in front.
 - **Bounded**: `maxSequenceSteps` (default 24) caps one batch.
 
+### One warm process instead of a process per action
+
+Starting PowerShell and compiling the Win32 bridge costs about a second, and that
+used to be paid for every single action and every frame. The plugin now keeps one
+worker process alive (`lib/scripts/desktop-worker.ps1`): the shared code lives in
+`_dsh-win32.ps1`, `_dsh-action.ps1` and `_dsh-capture.ps1`, the one-shot scripts
+(`desktop-action.ps1`, `desktop-probe.ps1`) stay as the fallback, and the worker
+answers both kinds of request over a single stdin/stdout protocol.
+
+Measured on this machine (2560x1600, 150% scaling, the harness UI animating):
+
+| request | one-shot script | warm worker |
+| --- | --- | --- |
+| action (`move`, `click`, `type`, ...) | ~0.9-2.0 s | **6-12 ms** |
+| capture (primary monitor) | ~1.2-2.3 s | **0.5 s** |
+
+The worker is started in the background on the first tool call, so the ~1 s it
+needs overlaps the first capture instead of delaying the first action. If it cannot
+be started, or dies, requests fall back to the one-shot script - with one
+exception: an action whose fate is unknown (the worker died after the request was
+delivered) is reported as a failure instead of being retried silently, because it
+may already have taken effect. `useWorker: false` disables the warm path entirely.
 ### Frames that did not change cost nothing
 
 Every capture returns a `frameHash`. When a frame is byte-identical to the
