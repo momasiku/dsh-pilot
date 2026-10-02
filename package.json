@@ -1,6 +1,6 @@
 {
   "name": "dsh-pilot",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Real-time desktop vision and control for the DeepSeek Harness: screen_view captures the live screen as an image the model can see, desktop_control drives the mouse, keyboard, and windows against the exact same pixel space; desktop_sequence runs a whole batch of actions in one call and looks once at the end.",
   "license": "MIT",
   "author": "momasiku",
@@ -8,13 +8,20 @@
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
     "lib/scripts",
+    "cordis.patch.yml",
     "README.md"
   ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
   "keywords": [
     "dsh",
     "dsh-plugin",

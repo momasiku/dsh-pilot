@@ -1,0 +1,19 @@
+# Bundle patch for dsh-pilot.
+#
+# `dsh plugin add dsh-pilot` applies this file as a layer and inserts the single
+# plugin row below into the composed profile configuration. Shipping the row here,
+# instead of hand-writing it into the profile's own cordis.patch.yml, is what makes
+# the plugin a first-class member of the bundle layer: the plugin manager then knows
+# which entry id belongs to this package, and the row survives the profile patch
+# layer being rewritten (a hand-written insert row does not — it was flattened into
+# stray top-level keys once, which silently unloaded the plugin).
+#
+# config carries the settings the plugin reads; the defaults in lib/index.js apply
+# to anything left out.
+- insert:
+    - id: pilot
+      name: 'dsh-pilot'
+      config:
+        captureRetention: 30
+        timeoutMs: 20000
+        settleMs: 750
