@@ -17,6 +17,8 @@ if (appRoot === undefined) {
 
 const appBase = `file:///${appRoot.replaceAll('\\', '/')}/`;
 await import(new URL('node_modules/@deepseek-ai/dsh-tools/lib/index.js', appBase).href);
+// The runtime's own predicate for "survives a JSON round trip without loss".
+const { isJsonValue } = await import(new URL('node_modules/@deepseek-ai/dsh-util-values/lib/index.js', appBase).href);
 const { Config, apply, inject, name } = await import(new URL('../lib/index.js', import.meta.url).href);
 
 console.log(`plugin name: ${name}`);
@@ -211,5 +213,29 @@ const leaky = { ...controlResult, ok: true };
 const leakViolations = validate(control.output.schema, leaky, 'value');
 if (leakViolations.length === 0) throw new Error('validator failed to catch an undeclared key; the guard is useless');
 console.log(`\nvalidator catches undeclared keys: ${leakViolations.join('; ')}`);
+
+// --- the presentation projection must be lossless for every shape it can see ---
+// A projector emitting `{ path: undefined }` is refused by the runtime as
+// "output.presentationMeta returned non-lossless JSON" — after the tool body ran.
+// desktop_sequence has no capturePath for a dry run, for capture:'none', and for an
+// end capture that failed, so those are the shapes that decide this.
+const sequence = registered.get('desktop_sequence');
+if (typeof sequence.output.presentationMeta !== 'function') throw new Error('desktop_sequence declares no presentationMeta');
+const sequenceShapes = [
+	['with an end frame', { capturePath: 'E:\\work\\.dsh-pilot\\sequence-1.png' }],
+	['no frame at all (capture: none)', {}],
+	['the end capture failed', { captureError: 'no image-capable route' }],
+	['the dry run', { planned: true, executed: 0, steps: [] }]
+];
+for (const [label, value] of sequenceShapes) {
+	const meta = sequence.output.presentationMeta({}, value);
+	if (!isJsonValue(meta)) throw new Error(`desktop_sequence presentationMeta is not lossless JSON for ${label}: ${JSON.stringify(meta)}`);
+}
+console.log(`\ndesktop_sequence presentationMeta is lossless for ${sequenceShapes.length} shapes (frame, no frame, failed capture, dry run)`);
+
+// The predicate itself has to catch the shipped shape, or the check above proves
+// nothing: `{ path: undefined }` is precisely what the runtime refuses.
+if (isJsonValue({ path: undefined })) throw new Error('the lossless predicate accepts { path: undefined }; the guard above is useless');
+console.log('lossless predicate rejects { path: undefined } as the runtime does');
 
 console.log('\nSMOKE OK');
