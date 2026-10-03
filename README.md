@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/banner.png" alt="dsh-pilot — give DeepSeek Harness hands and eyes" width="100%">
+
 # dsh-pilot
 
 **Give DeepSeek Harness hands and eyes.**
