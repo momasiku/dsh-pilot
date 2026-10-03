@@ -136,8 +136,19 @@ Giving a model hands is the part worth getting right:
 ## Install
 
 ```powershell
+# from the repository
+dsh plugin --profile <name> add github:momasiku/dsh-pilot
+
+# or this repository's prebuilt tarball, which skips the build-approval step
+dsh plugin --profile <name> add https://github.com/momasiku/dsh-pilot/releases/latest/download/dsh-pilot.tgz
+
+# or a checkout you already have
 dsh plugin --profile <name> add "file:E:\path\to\dsh-pilot"
 ```
+
+**Install it by repository, not by bare name.** `dsh plugin add` asks the npm
+registry first, and the name `dsh-pilot` on npm belongs to an unrelated
+browser-automation plugin.
 
 The package ships its own loader row, so `plugin add` places `dsh-pilot` in
 `dsh.profile.bundles` and the row comes from the package (`dsh.bundle.patch` →
@@ -145,8 +156,10 @@ The package ships its own loader row, so `plugin add` places `dsh-pilot` in
 the desktop app** once afterwards, then start a new conversation: the three tools
 join the tool list.
 
-Requirements: **Windows**, PowerShell 5.1 or 7, and a model route that declares
-image input (`deepseek-flash` does).
+Requires DSH **0.1.5-rc.2 through 0.2.x** — that is the peer range in `package.json`,
+and what `dsh plugin add` checks before it installs anything. Requirements:
+**Windows**, PowerShell 5.1 or 7, and a model route that declares image input
+(`deepseek-flash` does).
 
 ## Tools
 
@@ -407,12 +420,21 @@ DSH：desktop_sequence([focus "报表.xlsx", click 812,430, type "Q3 收入", ke
 ## 安装
 
 ```powershell
+# 从仓库装
+dsh plugin --profile <你的profile> add github:momasiku/dsh-pilot
+
+# 或用本仓库 Release 里的预构建包，免构建授权
+dsh plugin --profile <你的profile> add https://github.com/momasiku/dsh-pilot/releases/latest/download/dsh-pilot.tgz
+
+# 或你本地已有的检出
 dsh plugin --profile <你的profile> add "file:E:\path\to\dsh-pilot"
 ```
 
+⚠️ **请用仓库地址安装，不要用裸包名。** `dsh plugin add` 会先去 npm registry 查，而 npm 上的 `dsh-pilot` 属于另一款无关的浏览器操控插件。
+
 包**自带 loader 行**：`plugin add` 会把 `dsh-pilot` 放进 `dsh.profile.bundles`，行本身来自包内的 `cordis.patch.yml`（由 `dsh.bundle.patch` 声明），所以不会像手写补丁行那样被插件管理器重写时弄丢。装完**重启一次 DSH Desktop**，然后**新开一个会话**，三个工具就会出现在工具列表里。
 
-环境要求：**Windows**、PowerShell 5.1 或 7、以及声明了图像输入的模型线路（`deepseek-flash` 可以）。
+要求 DSH **0.1.5-rc.2 至 0.2.x**（即 `package.json` 里的 peer 范围，也是 `dsh plugin add` 在安装前的门禁）。环境要求：**Windows**、PowerShell 5.1 或 7、以及声明了图像输入的模型线路（`deepseek-flash` 可以）。
 
 ## 使用要点
 

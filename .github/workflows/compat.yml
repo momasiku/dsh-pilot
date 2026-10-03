@@ -1,0 +1,39 @@
+name: compat
+
+# This plugin runs inside the host process, so a change to the harness API is a
+# change to this plugin's runtime. These checks answer "does it still load on the
+# current generation" on a schedule, before a user has to find out.
+#
+# Deliberately NOT here: tools/sequence-smoke.mjs and tools/script-smoke.ps1.
+# Both spawn PowerShell and create/kill real windows, so they need an interactive
+# Windows desktop and stay a local check.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Daily, against whatever the registry publishes that day.
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  compat:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # The individual @deepseek-ai/dsh-* packages carry an ancient `latest`
+      # (0.0.1-rc.1) and publish the current generation under `next`, so `next`
+      # has to be asked for by name. Installing here also exercises the package's
+      # own peer ranges through npm's resolver — the second evaluator that reads
+      # them, alongside dsh's gate.
+      - name: Install the current harness generation
+        run: npm install --no-save --no-package-lock --no-audit --no-fund @deepseek-ai/dsh-tools@next @deepseek-ai/dsh-attachment@next @deepseek-ai/dsh-llm@next @deepseek-ai/schemastery@latest semver
+      - name: Declared peer ranges still match the host (both evaluators)
+        run: node tools/check-peers.mjs "${{ github.workspace }}"
+      - name: Host half loads and registers against the host
+        run: node tools/smoke.mjs "${{ github.workspace }}"
+      - name: Render blocks match the closed output schema
+        run: node tools/render-smoke.mjs "${{ github.workspace }}"
