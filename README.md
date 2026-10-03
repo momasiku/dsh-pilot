@@ -1,4 +1,4 @@
-<img src="https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/banner.png" alt="dsh-pilot — give DeepSeek Harness hands and eyes" width="100%">
+<img src="https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/banner.webp" alt="dsh-pilot — give DeepSeek Harness hands and eyes" width="100%">
 
 # dsh-pilot
 
