@@ -160,28 +160,39 @@ const controlBlocks = control.output.render({}, controlResult);
 console.log(`\ndesktop_control render blocks: ${controlBlocks.map((block) => block.type).join(', ')}`);
 console.log(controlBlocks[0].text);
 
-// The `windows` variant of the same tool. Its entries carry the two fields the
-// helper reports on top of the shared window shape.
+// The `windows` variant of the same tool. These entries mirror what the sensor
+// actually reports — _dsh-action.ps1 emits handle/title/class/process/pid/bounds/
+// visible/minimized/foreground — because the schema is closed. Copy the SENSOR's
+// shape here, never the schema's: the regression that shipped was `visible`,
+// reported by the sensor, missing from the schema, and these samples were written
+// from the schema, so the one field that mattered was the one field not covered.
 assertOutput('desktop_control', {
 	action: 'windows',
 	cursor: { x: 1, y: 2 },
 	foregroundTitle: 'Notepad',
-	windows: [{ handle: '0x1', title: 'Notepad', class: 'Notepad', process: 'notepad', pid: 42, bounds: '0,0,800,600', minimized: false, foreground: true }],
+	windows: [{ handle: '0x1', title: 'Notepad', class: 'Notepad', process: 'notepad', pid: 42, bounds: '0,0,800,600', visible: true, minimized: false, foreground: true }],
 	windowCount: 1,
 	notes: [],
 	actedAt: '2026-09-21T22:00:00.0000000+08:00'
 });
 
-// A `windows` entry missing the declared `minimized`/`foreground` fields is
-// still valid: they are optional, and a minimized window reports both.
+// A tray-hidden window reports visible:false alongside both flags, and an entry
+// that omits the optional flags is still valid.
 assertOutput('desktop_control', {
 	action: 'windows',
 	cursor: { x: 1, y: 2 },
-	windows: [{ handle: '0x2', title: 'Hidden', class: 'X', process: 'x', pid: 7, bounds: '-32000,-32000,100,100', minimized: true, foreground: false }],
+	windows: [{ handle: '0x2', title: 'Hidden', class: 'X', process: 'x', pid: 7, bounds: '-32000,-32000,100,100', visible: false, minimized: true, foreground: false }],
 	windowCount: 1,
 	notes: [],
 	actedAt: '2026-09-21T22:00:00.0000000+08:00'
 });
+
+// A window entry may only carry declared fields: anything else the sensor reports
+// has to be dropped by windowInfoOf() before the result leaves execute().
+const windowItemSchema = control.output.schema.properties.windows.items;
+const undeclaredEntry = validate(windowItemSchema, { handle: '0x3', title: 'x', visible: true, bookkeeping: 1 }, 'entry');
+if (undeclaredEntry.length === 0) throw new Error('a windows entry accepted an undeclared sensor key; the closed schema is not closed');
+console.log(`\nwindows entries reject undeclared sensor keys: ${undeclaredEntry.join('; ')}`);
 
 // The sensor's own `foregroundWindow` entry must project onto the same schema.
 assertOutput('screen_view', {
