@@ -11,7 +11,7 @@
 [English](#why-this-exists) · [中文说明](#中文说明)
 
 > **Windows desktop control.** The model sees the real screen and drives the real
-> mouse and keyboard, in any application that has a window.
+> mouse and keyboard.
 
 Out of the box, a DeepSeek Harness session can reason about your desktop but cannot
 touch it: you describe what is on screen, you take the screenshots, you do the
@@ -356,7 +356,7 @@ MIT © 2026 momasiku
 
 > **给 DeepSeek Harness 装上眼睛和手——装在整个桌面上。**
 >
-> **范围**：Windows 桌面操控——模型看到的是真实屏幕，驱动的是真实鼠标与键盘，任何有窗口的程序都算。
+> **范围**：Windows 桌面操控——模型看到的是真实屏幕，驱动的是真实鼠标与键盘。
 
 DSH 原本只会"说"：它能推理、能写代码、能规划，但**看不见你的屏幕，也动不了你的鼠标**。于是看屏幕的是你、截图的是你、点按钮的是你、出错了汇报的也是你——你成了它的手、它的眼，还兼任它的报错信息。
 
