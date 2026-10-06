@@ -1,14 +1,21 @@
-<img src="https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/banner.webp" alt="dsh-pilot — give DeepSeek Harness hands and eyes" width="100%">
+<img src="https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/banner.webp" alt="dsh-pilot — desktop control for DeepSeek Harness: hands and eyes on the whole machine" width="100%">
 
 # dsh-pilot
 
-**Give DeepSeek Harness hands and eyes.**
+**Give DeepSeek Harness hands and eyes on your desktop — the whole machine, not just a browser.**
 
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![platform](https://img.shields.io/badge/platform-Windows-0078d4.svg)
 ![tools](https://img.shields.io/badge/tools-screen__view%20%C2%B7%20desktop__control%20%C2%B7%20desktop__sequence-success)
 
 [English](#why-this-exists) · [中文说明](#中文说明)
+
+> **Scope.** This is desktop control, not browser automation: the model gets the real
+> screen and drives the real mouse and keyboard, in **any application that has a
+> window** — an editor, Excel, a proprietary installer, a game launcher, an in-house
+> tool. Nothing here needs a browser, a page object or a CSS selector. (There is an
+> unrelated browser-automation package on npm that happens to be called
+> `dsh-pilot`; it is not this project.)
 
 Out of the box, a DeepSeek Harness session can reason about your desktop but cannot
 touch it: you describe what is on screen, you take the screenshots, you do the
@@ -351,7 +358,9 @@ MIT © 2026 momasiku
 
 # 中文说明
 
-> **给 DeepSeek Harness 装上眼睛和手。**
+> **给 DeepSeek Harness 装上眼睛和手——装在整个桌面上，而不是一个浏览器里。**
+>
+> **范围**：这是**桌面**操控，不是浏览器自动化：模型拿到的是真实屏幕，驱动的也是真实鼠标与键盘，**任何有窗口的程序**都算（编辑器、Excel、专有安装程序、游戏启动器、自家内部工具）。这里不需要浏览器、不需要页面对象、也不需要 CSS 选择器。（npm 上那个同名的 `dsh-pilot` 是另一款浏览器自动化插件，不是这个项目。）
 
 DSH 原本只会"说"：它能推理、能写代码、能规划，但**看不见你的屏幕，也动不了你的鼠标**。于是看屏幕的是你、截图的是你、点按钮的是你、出错了汇报的也是你——你成了它的手、它的眼，还兼任它的报错信息。
 
