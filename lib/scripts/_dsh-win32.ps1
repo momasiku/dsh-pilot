@@ -36,9 +36,14 @@ public static class DshInput {
     [DllImport("shcore.dll")] public static extern int SetProcessDpiAwareness(int value);
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
 
+    // The wheel flags keep their Win32 names on purpose. PowerShell resolves type
+    // members case-insensitively and a constant shadows a method that differs only
+    // in case, so a constant named WHEEL made [DshInput]::Wheel(...) fail with
+    // "does not contain a method named 'Wheel'" - the scroll action never worked.
+    // Do not shorten these back.
     public const uint MOVE = 0x0001, LEFTDOWN = 0x0002, LEFTUP = 0x0004, RIGHTDOWN = 0x0008,
-                      RIGHTUP = 0x0010, MIDDLEDOWN = 0x0020, MIDDLEUP = 0x0040, WHEEL = 0x0800,
-                      HWHEEL = 0x1000;
+                      RIGHTUP = 0x0010, MIDDLEDOWN = 0x0020, MIDDLEUP = 0x0040, MOUSEEVENTF_WHEEL = 0x0800,
+                      MOUSEEVENTF_HWHEEL = 0x1000;
     public const uint KEYUP = 0x0002;
     public const byte VK_LWIN = 0x5B, VK_RWIN = 0x5C;
 
@@ -74,8 +79,8 @@ public static class DshInput {
         keybd_event(vk, 0, down ? 0u : KEYUP, IntPtr.Zero);
     }
     public static void SendKeysText(string sequence) { SendKeys.SendWait(sequence); }
-    public static void Wheel(int delta) { mouse_event(WHEEL, 0, 0, delta, IntPtr.Zero); }
-    public static void HWheel(int delta) { mouse_event(HWHEEL, 0, 0, delta, IntPtr.Zero); }
+    public static void Wheel(int delta) { mouse_event(MOUSEEVENTF_WHEEL, 0, 0, delta, IntPtr.Zero); }
+    public static void HWheel(int delta) { mouse_event(MOUSEEVENTF_HWHEEL, 0, 0, delta, IntPtr.Zero); }
     public static void Button(string which, bool down) {
         uint flag;
         if (which == "right") flag = down ? RIGHTDOWN : RIGHTUP;

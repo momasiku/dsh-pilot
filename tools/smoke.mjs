@@ -19,7 +19,7 @@ const appBase = `file:///${appRoot.replaceAll('\\', '/')}/`;
 await import(new URL('node_modules/@deepseek-ai/dsh-tools/lib/index.js', appBase).href);
 // The runtime's own predicate for "survives a JSON round trip without loss".
 const { isJsonValue } = await import(new URL('node_modules/@deepseek-ai/dsh-util-values/lib/index.js', appBase).href);
-const { Config, apply, inject, name, pruneUndefined, windowInfoOf } = await import(new URL('../lib/index.js', import.meta.url).href);
+const { Config, apply, inject, name, pruneAbsent, windowInfoOf } = await import(new URL('../lib/index.js', import.meta.url).href);
 
 console.log(`plugin name: ${name}`);
 console.log(`inject: ${JSON.stringify(inject)}`);
@@ -200,18 +200,28 @@ const undeclaredEntry = validate(windowItemSchema, { handle: '0x3', title: 'x', 
 if (undeclaredEntry.length === 0) throw new Error('a windows entry accepted an undeclared sensor key; the closed schema is not closed');
 console.log(`windows entries reject undeclared sensor keys: ${undeclaredEntry.join('; ')}`);
 
-// The boundary prune. One undefined anywhere in a result refuses the whole call
-// after the fact, so every tool returns through this pass rather than trusting each
-// projection to remember — which is how `visible`, `{ path: undefined }` and `class`
-// each reached a release.
-const pruned = pruneUndefined({ a: 1, b: undefined, c: { d: undefined, e: [1, undefined, { f: undefined, g: 2 }] } });
-if ('b' in pruned) throw new Error('pruneUndefined left a top-level undefined property');
-if ('d' in pruned.c) throw new Error('pruneUndefined left a nested undefined property');
+// The boundary prune. One absent property anywhere in a result refuses the whole
+// call after the fact, so every tool returns through this pass rather than trusting
+// each projection to remember — which is how `visible`, `{ path: undefined }`,
+// `class` and `foregroundProcess: null` each reached a release.
+const pruned = pruneAbsent({ a: 1, b: undefined, c: { d: undefined, e: [1, undefined, { f: undefined, g: 2 }] }, h: null, i: { j: null } });
+if ('b' in pruned) throw new Error('pruneAbsent left a top-level undefined property');
+if ('d' in pruned.c) throw new Error('pruneAbsent left a nested undefined property');
 if (pruned.c.e[1] !== null) throw new Error(`an array hole should become null, got ${JSON.stringify(pruned.c.e[1])}`);
-if ('f' in pruned.c.e[2]) throw new Error('pruneUndefined left an undefined property inside an array item');
+if ('f' in pruned.c.e[2]) throw new Error('pruneAbsent left an undefined property inside an array item');
+if ('h' in pruned) throw new Error('pruneAbsent left a null property; the validator rejects null for a declared string too');
+if ('j' in pruned.i) throw new Error('pruneAbsent left a nested null property');
 if (!isJsonValue(pruned)) throw new Error('the pruned value is still not lossless JSON');
 if (isJsonValue({ class: undefined })) throw new Error('the lossless predicate accepts { class: undefined }; the prune above proves nothing');
-console.log(`boundary prune drops undefined at every depth: ${JSON.stringify(pruned)}`);
+// A null array item stays: JSON uses null for a hole, and renumbering would be worse.
+if (pruneAbsent({ k: [null, 1] }).k[0] !== null) throw new Error('a null array item must survive the prune');
+console.log(`boundary prune drops absent properties at every depth: ${JSON.stringify(pruned)}`);
+
+// Why `null` is pruned with `undefined`: the runtime rejects both against a
+// declared `string`, and the sensor encodes "no process name" as $null.
+const nullViolations = validate(control.output.schema, { action: 'move', foregroundProcess: null }, 'value');
+if (nullViolations.length === 0) throw new Error('the output schema accepts a null string; pruning null would be pointless');
+console.log(`a null string is refused by the schema too: ${nullViolations.join('; ')}`);
 
 // The sensor's own `foregroundWindow` entry must project onto the same schema.
 assertOutput('screen_view', {
