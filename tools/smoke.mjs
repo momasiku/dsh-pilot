@@ -19,7 +19,7 @@ const appBase = `file:///${appRoot.replaceAll('\\', '/')}/`;
 await import(new URL('node_modules/@deepseek-ai/dsh-tools/lib/index.js', appBase).href);
 // The runtime's own predicate for "survives a JSON round trip without loss".
 const { isJsonValue } = await import(new URL('node_modules/@deepseek-ai/dsh-util-values/lib/index.js', appBase).href);
-const { Config, apply, inject, name } = await import(new URL('../lib/index.js', import.meta.url).href);
+const { Config, apply, inject, name, pruneUndefined, windowInfoOf } = await import(new URL('../lib/index.js', import.meta.url).href);
 
 console.log(`plugin name: ${name}`);
 console.log(`inject: ${JSON.stringify(inject)}`);
@@ -162,39 +162,56 @@ const controlBlocks = control.output.render({}, controlResult);
 console.log(`\ndesktop_control render blocks: ${controlBlocks.map((block) => block.type).join(', ')}`);
 console.log(controlBlocks[0].text);
 
-// The `windows` variant of the same tool. These entries mirror what the sensor
-// actually reports — _dsh-action.ps1 emits handle/title/class/process/pid/bounds/
-// visible/minimized/foreground — because the schema is closed. Copy the SENSOR's
-// shape here, never the schema's: the regression that shipped was `visible`,
-// reported by the sensor, missing from the schema, and these samples were written
-// from the schema, so the one field that mattered was the one field not covered.
+// --- the two window shapes, through the projection that handles both -----------
+// The enumeration script (_dsh-action.ps1) reports handle/title/process/pid/bounds/
+// visible/minimized/foreground and NO `class`. The capture script additionally
+// reports `class`, for the foreground window. Both go through windowInfoOf(), so
+// both are driven through it here instead of being described: a sample written from
+// the schema is what let `visible` ship, and the same mistake shipped `class` as
+// `class: undefined` on every listed window, which the runtime refuses as
+// non-lossless JSON *after* the action already happened.
+const windowItemSchema = control.output.schema.properties.windows.items;
+
+const listed = windowInfoOf({ handle: '0x1', title: 'Notepad', process: 'notepad', pid: 42, bounds: '0,0,800,600', visible: true, minimized: false, foreground: true });
+if ('class' in listed) throw new Error(`a listed window carried a class key, and the enumeration script reports none — it would arrive as class: undefined (keys: ${Object.keys(listed).join(', ')})`);
+if (!isJsonValue(listed)) throw new Error(`a listed window is not lossless JSON: ${JSON.stringify(listed)}`);
+const listedProblems = validate(windowItemSchema, listed, 'entry');
+if (listedProblems.length > 0) throw new Error(`a listed window violates the item schema: ${listedProblems.join('; ')}`);
+
 assertOutput('desktop_control', {
 	action: 'windows',
 	cursor: { x: 1, y: 2 },
 	foregroundTitle: 'Notepad',
-	windows: [{ handle: '0x1', title: 'Notepad', class: 'Notepad', process: 'notepad', pid: 42, bounds: '0,0,800,600', visible: true, minimized: false, foreground: true }],
+	windows: [listed],
 	windowCount: 1,
 	notes: [],
 	actedAt: '2026-09-21T22:00:00.0000000+08:00'
 });
+console.log(`\nlisted windows project without class: ${JSON.stringify(listed)}`);
 
-// A tray-hidden window reports visible:false alongside both flags, and an entry
-// that omits the optional flags is still valid.
-assertOutput('desktop_control', {
-	action: 'windows',
-	cursor: { x: 1, y: 2 },
-	windows: [{ handle: '0x2', title: 'Hidden', class: 'X', process: 'x', pid: 7, bounds: '-32000,-32000,100,100', visible: false, minimized: true, foreground: false }],
-	windowCount: 1,
-	notes: [],
-	actedAt: '2026-09-21T22:00:00.0000000+08:00'
-});
+// The capture path does report a class, and the projection keeps it.
+const projectedForeground = windowInfoOf({ handle: '0x1', title: 'Notepad', class: 'Notepad', process: 'notepad', pid: 42, bounds: '0,0,800,600', visible: true, minimized: false, foreground: true });
+if (projectedForeground.class !== 'Notepad') throw new Error('the capture path\'s window class was dropped by the projection');
+console.log(`captured foreground keeps its class: ${JSON.stringify(projectedForeground)}`);
 
 // A window entry may only carry declared fields: anything else the sensor reports
 // has to be dropped by windowInfoOf() before the result leaves execute().
-const windowItemSchema = control.output.schema.properties.windows.items;
 const undeclaredEntry = validate(windowItemSchema, { handle: '0x3', title: 'x', visible: true, bookkeeping: 1 }, 'entry');
 if (undeclaredEntry.length === 0) throw new Error('a windows entry accepted an undeclared sensor key; the closed schema is not closed');
-console.log(`\nwindows entries reject undeclared sensor keys: ${undeclaredEntry.join('; ')}`);
+console.log(`windows entries reject undeclared sensor keys: ${undeclaredEntry.join('; ')}`);
+
+// The boundary prune. One undefined anywhere in a result refuses the whole call
+// after the fact, so every tool returns through this pass rather than trusting each
+// projection to remember — which is how `visible`, `{ path: undefined }` and `class`
+// each reached a release.
+const pruned = pruneUndefined({ a: 1, b: undefined, c: { d: undefined, e: [1, undefined, { f: undefined, g: 2 }] } });
+if ('b' in pruned) throw new Error('pruneUndefined left a top-level undefined property');
+if ('d' in pruned.c) throw new Error('pruneUndefined left a nested undefined property');
+if (pruned.c.e[1] !== null) throw new Error(`an array hole should become null, got ${JSON.stringify(pruned.c.e[1])}`);
+if ('f' in pruned.c.e[2]) throw new Error('pruneUndefined left an undefined property inside an array item');
+if (!isJsonValue(pruned)) throw new Error('the pruned value is still not lossless JSON');
+if (isJsonValue({ class: undefined })) throw new Error('the lossless predicate accepts { class: undefined }; the prune above proves nothing');
+console.log(`boundary prune drops undefined at every depth: ${JSON.stringify(pruned)}`);
 
 // The sensor's own `foregroundWindow` entry must project onto the same schema.
 assertOutput('screen_view', {
