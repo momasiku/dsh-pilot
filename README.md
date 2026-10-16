@@ -10,8 +10,6 @@
 
 ![platform](https://img.shields.io/badge/platform-Windows-0078d4.svg)
 ![DSH](https://img.shields.io/badge/DSH-0.1.5--rc.2%20%E2%86%92%200.2.x-5b50ed.svg)
-![PowerShell](https://img.shields.io/badge/PowerShell-5.1%20%7C%207-5391FE.svg)
-![Node](https://img.shields.io/badge/node-22%2B-339933.svg)
 ![tools](https://img.shields.io/badge/tools-screen__view%20%C2%B7%20desktop__control%20%C2%B7%20desktop__sequence-success)
 
 [English](#why-this-exists) · [中文说明](#中文说明)
