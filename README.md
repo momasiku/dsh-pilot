@@ -6,6 +6,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![platform](https://img.shields.io/badge/platform-Windows-0078d4.svg)
+[![npm](https://img.shields.io/npm/v/@momasiku/dsh-pilot?label=npm)](https://www.npmjs.com/package/@momasiku/dsh-pilot)
 ![tools](https://img.shields.io/badge/tools-screen__view%20%C2%B7%20desktop__control%20%C2%B7%20desktop__sequence-success)
 
 [English](#why-this-exists) · [中文说明](#中文说明)
@@ -154,6 +155,10 @@ dsh plugin --profile <name> add https://github.com/momasiku/dsh-pilot/releases/l
 dsh plugin --profile <name> add "file:E:\path\to\dsh-pilot"
 ```
 
+**Download:** [npm package](https://www.npmjs.com/package/@momasiku/dsh-pilot) ·
+[prebuilt tarball](https://github.com/momasiku/dsh-pilot/releases/latest/download/dsh-pilot.tgz) ·
+[source](https://github.com/momasiku/dsh-pilot)
+
 **Install by the scoped name.** `dsh plugin add` asks the npm registry first, and
 the unscoped name `dsh-pilot` on npm belongs to an unrelated browser-automation
 plugin - so install as `@momasiku/dsh-pilot`, or by repository / tarball as shown above.
@@ -168,6 +173,32 @@ Requires DSH **0.1.5-rc.2 through 0.2.x** — that is the peer range in `package
 and what `dsh plugin add` checks before it installs anything. Requirements:
 **Windows**, PowerShell 5.1 or 7, and a model route that declares image input
 (`deepseek-flash` does).
+
+### Recent changes
+
+**0.5.8** — two fixes, and the package is now on npm as
+[`@momasiku/dsh-pilot`](https://www.npmjs.com/package/@momasiku/dsh-pilot).
+
+- **The monitor geometry could go stale, and silently.** The inventory came from
+  `System.Windows.Forms.Screen.AllScreens`, a static cache that only refreshes
+  when the process pumps `WM_DISPLAYCHANGE`. The warm worker is a
+  `-NonInteractive` read loop with no message pump, so nothing ever invalidated
+  it. Measured: a worker alive 13 hours reported
+  `<screens>primary WinDisc 0,0,1600,900</screens>` while the same result carried
+  `<image_size>1024x768</image_size>` — two answers to one question, inside the
+  very frame the coordinate contract is read from. Monitors now come from
+  `EnumDisplayMonitors` per capture and the virtual screen from
+  `GetSystemMetrics`; neither caches.
+- **The cold start paid for the bridge every time.** The Win32 bridge was compiled
+  with `Add-Type` on every process start, before the worker could answer
+  `ready` — exactly the cost the warm worker exists to stop paying twice. It now
+  compiles once into a DLL keyed by a hash of its source, then loads that.
+  One-shot capture **2638 ms → 813 ms**; warm actions unchanged at **9 ms**. A
+  source edit changes the hash and therefore the DLL, so a stale cache can never
+  shadow a later fix.
+
+The npm name is scoped because `dsh-pilot` on npm belongs to an unrelated
+browser-automation plugin. **The repository is still `momasiku/dsh-pilot`.**
 
 ## Tools
 
@@ -443,11 +474,22 @@ dsh plugin --profile <你的profile> add https://github.com/momasiku/dsh-pilot/r
 dsh plugin --profile <你的profile> add "file:E:\path\to\dsh-pilot"
 ```
 
+**下载：** [npm 包](https://www.npmjs.com/package/@momasiku/dsh-pilot) · [预构建 tarball](https://github.com/momasiku/dsh-pilot/releases/latest/download/dsh-pilot.tgz) · [源码](https://github.com/momasiku/dsh-pilot)
+
 ✅ **推荐用 npm 上的 scoped 包名 `@momasiku/dsh-pilot`。** 裸名 `dsh-pilot` 在 npm 上属于另一款无关的浏览器操控插件，而 `dsh plugin add` 总是先查 npm，所以别用裸名；用仓库地址或 tarball 也照样可以。
 
 包**自带 loader 行**：`plugin add` 会把 `@momasiku/dsh-pilot` 放进 `dsh.profile.bundles`，行本身来自包内的 `cordis.patch.yml`（由 `dsh.bundle.patch` 声明），所以不会像手写补丁行那样被插件管理器重写时弄丢。装完**重启一次 DSH Desktop**，然后**新开一个会话**，三个工具就会出现在工具列表里。
 
 要求 DSH **0.1.5-rc.2 至 0.2.x**（即 `package.json` 里的 peer 范围，也是 `dsh plugin add` 在安装前的门禁）。环境要求：**Windows**、PowerShell 5.1 或 7、以及声明了图像输入的模型线路（`deepseek-flash` 可以）。
+
+### 最近改动
+
+**0.5.8** —— 两个修复，同时包已发布到 npm：[`@momasiku/dsh-pilot`](https://www.npmjs.com/package/@momasiku/dsh-pilot)。
+
+- **显示器几何会变陈旧，而且是静默的。** 原本显示器清单来自 `System.Windows.Forms.Screen.AllScreens`，这是静态缓存，只有进程处理 `WM_DISPLAYCHANGE` 时才刷新；而暖 worker 是没有消息泵的 `-NonInteractive` 读取循环，缓存永远不会失效。实测：存活 13 小时的 worker 报 `<screens>primary WinDisc 0,0,1600,900</screens>`，而同一份结果里的 `<image_size>` 是 `1024x768` —— 同一份结果两个答案，而坐标契约正是从这份帧里读的。现在每次截图都用 `EnumDisplayMonitors` 重新枚举，虚拟屏改用 `GetSystemMetrics`，两者都不缓存。
+- **冷启动每次都重付编译开销。** Win32 桥原本每次进程启动都要 `Add-Type` 编译一次，而且发生在 worker 能回答 `ready` 之前 —— 正是暖 worker 存在的意义所在的那笔开销。现在按源码哈希编译一次存成 DLL，之后直接加载。一次性抓帧 **2638 ms → 813 ms**，暖动作仍是 **9 ms**。改源码会换哈希、换 DLL，缓存绝不会遮蔽后续修复。
+
+npm 上的包名带 scope，是因为 `dsh-pilot` 这个名字在 npm 上属于另一款无关的浏览器操控插件。**仓库名仍然是 `momasiku/dsh-pilot`。**
 
 ## 使用要点
 
