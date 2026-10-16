@@ -141,7 +141,10 @@ Giving a model hands is the part worth getting right:
 ## Install
 
 ```powershell
-# from the repository
+# from npm (recommended)
+dsh plugin --profile <name> add @momasiku/dsh-pilot
+
+# or from the repository
 dsh plugin --profile <name> add github:momasiku/dsh-pilot
 
 # or this repository's prebuilt tarball, which skips the build-approval step
@@ -151,11 +154,11 @@ dsh plugin --profile <name> add https://github.com/momasiku/dsh-pilot/releases/l
 dsh plugin --profile <name> add "file:E:\path\to\dsh-pilot"
 ```
 
-**Install it by repository, not by bare name.** `dsh plugin add` asks the npm
-registry first, and the name `dsh-pilot` on npm belongs to an unrelated
-browser-automation plugin.
+**Install by the scoped name.** `dsh plugin add` asks the npm registry first, and
+the unscoped name `dsh-pilot` on npm belongs to an unrelated browser-automation
+plugin - so install as `@momasiku/dsh-pilot`, or by repository / tarball as shown above.
 
-The package ships its own loader row, so `plugin add` places `dsh-pilot` in
+The package ships its own loader row, so `plugin add` places `@momasiku/dsh-pilot` in
 `dsh.profile.bundles` and the row comes from the package (`dsh.bundle.patch` →
 `cordis.patch.yml`) rather than being hand-written into your patch layer. **Restart
 the desktop app** once afterwards, then start a new conversation: the three tools
@@ -427,7 +430,10 @@ DSH：desktop_sequence([focus "报表.xlsx", click 812,430, type "Q3 收入", ke
 ## 安装
 
 ```powershell
-# 从仓库装
+# 从 npm 装（推荐）
+dsh plugin --profile <你的profile> add @momasiku/dsh-pilot
+
+# 或从仓库装
 dsh plugin --profile <你的profile> add github:momasiku/dsh-pilot
 
 # 或用本仓库 Release 里的预构建包，免构建授权
@@ -437,9 +443,9 @@ dsh plugin --profile <你的profile> add https://github.com/momasiku/dsh-pilot/r
 dsh plugin --profile <你的profile> add "file:E:\path\to\dsh-pilot"
 ```
 
-⚠️ **请用仓库地址安装，不要用裸包名。** `dsh plugin add` 会先去 npm registry 查，而 npm 上的 `dsh-pilot` 属于另一款无关的浏览器操控插件。
+✅ **推荐用 npm 上的 scoped 包名 `@momasiku/dsh-pilot`。** 裸名 `dsh-pilot` 在 npm 上属于另一款无关的浏览器操控插件，而 `dsh plugin add` 总是先查 npm，所以别用裸名；用仓库地址或 tarball 也照样可以。
 
-包**自带 loader 行**：`plugin add` 会把 `dsh-pilot` 放进 `dsh.profile.bundles`，行本身来自包内的 `cordis.patch.yml`（由 `dsh.bundle.patch` 声明），所以不会像手写补丁行那样被插件管理器重写时弄丢。装完**重启一次 DSH Desktop**，然后**新开一个会话**，三个工具就会出现在工具列表里。
+包**自带 loader 行**：`plugin add` 会把 `@momasiku/dsh-pilot` 放进 `dsh.profile.bundles`，行本身来自包内的 `cordis.patch.yml`（由 `dsh.bundle.patch` 声明），所以不会像手写补丁行那样被插件管理器重写时弄丢。装完**重启一次 DSH Desktop**，然后**新开一个会话**，三个工具就会出现在工具列表里。
 
 要求 DSH **0.1.5-rc.2 至 0.2.x**（即 `package.json` 里的 peer 范围，也是 `dsh plugin add` 在安装前的门禁）。环境要求：**Windows**、PowerShell 5.1 或 7、以及声明了图像输入的模型线路（`deepseek-flash` 可以）。
 

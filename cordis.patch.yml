@@ -12,7 +12,7 @@
 # to anything left out.
 - insert:
     - id: pilot
-      name: 'dsh-pilot'
+      name: '@momasiku/dsh-pilot'
       config:
         captureRetention: 30
         timeoutMs: 20000
