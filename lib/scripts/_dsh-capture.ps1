@@ -58,24 +58,43 @@ if ($params.PSObject.Properties.Name -contains 'rulers') { $rulers = [bool] $par
 
 
 # ------------------------------------------------------------ screen inventory
+# Re-enumerated on every capture, deliberately.
+#
+# System.Windows.Forms.Screen.AllScreens is a static cache that only refreshes
+# when the process pumps WM_DISPLAYCHANGE. The warm worker is a -NonInteractive
+# read loop with no message pump, so that cache is never invalidated: after a
+# resolution change the worker keeps reporting the geometry it saw at startup.
+# Measured here - a worker alive 13 hours reported
+# <screens>primary WinDisc 0,0,1600,900</screens> while the same result carried
+# <image_size>1024x768</image_size>. Restarting the worker produced the correct
+# 1024x768. Two answers to one question, inside the very result the coordinate
+# contract is read from. EnumDisplayMonitors re-queries per call, so there is no
+# cache to go stale.
 $screens = @()
+$screenBounds = @()
+$rows = @()
 try {
-    Add-Type -AssemblyName System.Windows.Forms
-    $all = [System.Windows.Forms.Screen]::AllScreens
-    foreach ($s in $all) {
-        $screens += [ordered]@{
-            device  = $s.DeviceName
-            primary = [bool] $s.Primary
-            bounds  = ('{0},{1},{2},{3}' -f $s.Bounds.X, $s.Bounds.Y, $s.Bounds.Width, $s.Bounds.Height)
-        }
-    }
+    $rows = @([DshProbe]::Monitors())
 } catch {
     Write-ProbeError "the desktop is not available to this session (screen enumeration failed: $($_.Exception.Message))"
 }
+foreach ($row in $rows) {
+    $parts = $row -split '\|'
+    if ($parts.Count -lt 6) { continue }
+    $left = [int] $parts[2]; $top = [int] $parts[3]; $right = [int] $parts[4]; $bottom = [int] $parts[5]
+    if (($right - $left) -le 0 -or ($bottom - $top) -le 0) { continue }
+    $screens += [ordered]@{
+        device  = $parts[0]
+        primary = ($parts[1] -eq '1')
+        bounds  = ('{0},{1},{2},{3}' -f $left, $top, ($right - $left), ($bottom - $top))
+    }
+    $screenBounds += [pscustomobject]@{ X = $left; Y = $top; Width = ($right - $left); Height = ($bottom - $top) }
+}
 if ($screens.Count -eq 0) { Write-ProbeError 'the desktop is not available to this session (no interactive display)' }
 
-$primaryDip = $all | Where-Object { $_.Primary } | Select-Object -First 1
-if ($null -eq $primaryDip) { $primaryDip = $all[0] }
+$primaryIndex = 0
+for ($i = 0; $i -lt $screens.Count; $i++) { if ($screens[$i].primary) { $primaryIndex = $i; break } }
+$primaryDip = $screenBounds[$primaryIndex]
 
 # Resolution order: an explicit window, then a region, then the screen mode.
 $kind = $null
@@ -106,17 +125,24 @@ if (-not [string]::IsNullOrWhiteSpace($windowQuery)) {
     $captureDip = [pscustomobject]@{ X = $r[0]; Y = $r[1]; Width = $r[2]; Height = $r[3] }
     $kind = 'region'
 } elseif ($screenMode -eq 'all') {
-    $bounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
-    $captureDip = [pscustomobject]@{ X = $bounds.X; Y = $bounds.Y; Width = $bounds.Width; Height = $bounds.Height }
+    # SM_XVIRTUALSCREEN(76), SM_YVIRTUALSCREEN(77), SM_CXVIRTUALSCREEN(78), SM_CYVIRTUALSCREEN(79).
+    # GetSystemMetrics is a live call; SystemInformation.VirtualScreen comes from the
+    # same WinForms cache as Screen.AllScreens and goes stale for the same reason.
+    $vx = [DshProbe]::GetSystemMetrics(76)
+    $vy = [DshProbe]::GetSystemMetrics(77)
+    $vw = [DshProbe]::GetSystemMetrics(78)
+    $vh = [DshProbe]::GetSystemMetrics(79)
+    if ($vw -le 0 -or $vh -le 0) { $vx = $primaryDip.X; $vy = $primaryDip.Y; $vw = $primaryDip.Width; $vh = $primaryDip.Height }
+    $captureDip = [pscustomobject]@{ X = $vx; Y = $vy; Width = $vw; Height = $vh }
     $kind = 'all'
 } elseif ($screenMode -eq 'primary') {
-    $captureDip = $primaryDip.Bounds
+    $captureDip = $primaryDip
     $kind = 'primary'
 } else {
     $index = 0
     if (-not [int]::TryParse($screenMode, [ref] $index)) { Write-ProbeError "screen must be 'primary', 'all', or a monitor index (got '$screenMode')" }
     if ($index -lt 0 -or $index -ge $screens.Count) { Write-ProbeError "monitor index $index is out of range (0..$($screens.Count - 1))" }
-    $captureDip = $all[$index].Bounds
+    $captureDip = $screenBounds[$index]
     $kind = "screen:$index"
 }
 

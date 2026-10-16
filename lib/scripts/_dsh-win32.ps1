@@ -1,4 +1,4 @@
-﻿# pilot / _dsh-win32.ps1 - the Win32 bridge and per-monitor DPI awareness, shared
+# pilot / _dsh-win32.ps1 - the Win32 bridge and per-monitor DPI awareness, shared
 # by the one-shot scripts and by the persistent worker.
 #
 # Every block is idempotent: a process that already has the type does not compile
@@ -162,7 +162,22 @@ public static class DshInput {
     }
 }
 '@
-$null = Add-Type -TypeDefinition $nativeSource -Language CSharp -ReferencedAssemblies System.Windows.Forms
+# Compiling this bridge costs ~1 s idle and far more under load, and the worker
+# pays it on every cold start - before it can answer "ready". Compile once into a
+# DLL keyed by a hash of the source, then load that. Any edit to the source yields
+# a new hash and so a new DLL, so a stale cache can never shadow a fix.
+# -OutputAssembly does not load the types into the session, hence the -Path pass;
+# if the cached file is unusable we fall back to compiling in memory.
+$inputStamp = [BitConverter]::ToString(
+    [System.Security.Cryptography.SHA256]::Create().ComputeHash(
+        [System.Text.Encoding]::UTF8.GetBytes($nativeSource))).Replace('-', '').Substring(0, 16)
+$inputDll = Join-Path $env:TEMP ('dsh-pilot-DshInput-' + $inputStamp + '.dll')
+if (-not (Test-Path $inputDll)) {
+    $null = Add-Type -TypeDefinition $nativeSource -Language CSharp -ReferencedAssemblies System.Windows.Forms -OutputAssembly $inputDll
+}
+try { $null = Add-Type -Path $inputDll } catch {
+    $null = Add-Type -TypeDefinition $nativeSource -Language CSharp -ReferencedAssemblies System.Windows.Forms
+}
 $null = [DshInput]::BecomeDpiAware()
 }
 
@@ -207,8 +222,59 @@ public static class DshProbe {
         GetClassNameW(h, sb, sb.Capacity);
         return sb.ToString();
     }
+
+    // Monitor inventory, re-enumerated on every call.
+    //
+    // System.Windows.Forms.Screen.AllScreens is a static cache that only refreshes
+    // when the process pumps WM_DISPLAYCHANGE. The warm worker (desktop-worker.ps1)
+    // is a -NonInteractive read loop with no message pump, so that cache is never
+    // invalidated: after a resolution change it keeps reporting the geometry it saw
+    // at startup. That is how a frame came back with <screens>0,0,1600,900</screens>
+    // beside <image_size>1024x768</image_size> - two answers to the same question,
+    // in the very result the coordinate contract is read from. EnumDisplayMonitors
+    // has no cache to go stale.
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct MONITORINFOEX {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public int dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string szDevice;
+    }
+    public delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdc, ref RECT lprcMonitor, IntPtr dwData);
+    [DllImport("user32.dll")] public static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr clip, MonitorEnumProc cb, IntPtr data);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern bool GetMonitorInfoW(IntPtr hMonitor, ref MONITORINFOEX info);
+
+    // One line per monitor: device|primary|left|top|right|bottom
+    public static string[] Monitors() {
+        var rows = new System.Collections.Generic.List<string>();
+        MonitorEnumProc cb = delegate(IntPtr hMon, IntPtr hdc, ref RECT r, IntPtr data) {
+            var info = new MONITORINFOEX();
+            info.cbSize = Marshal.SizeOf(typeof(MONITORINFOEX));
+            if (GetMonitorInfoW(hMon, ref info)) {
+                bool primary = (info.dwFlags & 1) != 0;
+                rows.Add(info.szDevice + "|" + (primary ? "1" : "0") + "|" +
+                    info.rcMonitor.Left + "|" + info.rcMonitor.Top + "|" +
+                    info.rcMonitor.Right + "|" + info.rcMonitor.Bottom);
+            } else {
+                rows.Add("?|0|" + r.Left + "|" + r.Top + "|" + r.Right + "|" + r.Bottom);
+            }
+            return true;
+        };
+        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, cb, IntPtr.Zero);
+        return rows.ToArray();
+    }
 }
 '@
-$null = Add-Type -TypeDefinition $nativeSource -Language CSharp
+$probeStamp = [BitConverter]::ToString(
+    [System.Security.Cryptography.SHA256]::Create().ComputeHash(
+        [System.Text.Encoding]::UTF8.GetBytes($nativeSource))).Replace('-', '').Substring(0, 16)
+$probeDll = Join-Path $env:TEMP ('dsh-pilot-DshProbe-' + $probeStamp + '.dll')
+if (-not (Test-Path $probeDll)) {
+    $null = Add-Type -TypeDefinition $nativeSource -Language CSharp -OutputAssembly $probeDll
+}
+try { $null = Add-Type -Path $probeDll } catch {
+    $null = Add-Type -TypeDefinition $nativeSource -Language CSharp
+}
 $null = [DshProbe]::BecomeDpiAware()
 }
