@@ -304,21 +304,31 @@ switch ($action) {
         }
     }
     'focus' {
+        # A refused hand-off used to be a note: the step reported ok and the batch
+        # carried on, so every later click and keystroke went to whatever window was
+        # actually in front. That is the one failure this plugin must not report as
+        # success, so it is an error now; tolerant keeps the old behaviour for a
+        # caller that knows the coordinates are right either way.
+        $tolerant = $false
+        $tolerantRaw = Get-Param 'tolerant'
+        if ($null -ne $tolerantRaw) { $tolerant = [bool] $tolerantRaw }
+        $label = ''
+        $target = [IntPtr]::Zero
         if ($script:TargetHwnd -ne [IntPtr]::Zero) {
             # An explicit handle is authoritative and works for a window hidden
             # to the tray, which a title search cannot reach.
             if (-not [DshInput]::IsAlive($script:TargetHwnd)) { Write-ActionError "the target window (hwnd $($script:TargetHwndText)) no longer exists" }
-            $raised = [DshInput]::ForceForeground($script:TargetHwnd)
-            if (-not $raised) { $notes += "Windows would not hand focus to hwnd $($script:TargetHwndText); '$([DshInput]::ForegroundTitle())' kept it." }
+            $target = $script:TargetHwnd
+            $label = "hwnd $($script:TargetHwndText)"
+            $null = [DshInput]::ForceForeground($target)
             Start-Sleep -Milliseconds 220
         } else {
             if ([string]::IsNullOrWhiteSpace($windowTitle)) { Write-ActionError 'focus requires a title, or an hwnd' }
             $needle = $windowTitle.ToLowerInvariant()
             # EnumWindows, not Process.MainWindowHandle: an Electron, UWP or tray
             # window frequently reports no main window handle at all, so a
-            # MainWindowHandle scan cannot find a window that `windows` (which
-            # already enumerates) happily lists.
-            $target = [IntPtr]::Zero
+            # MainWindowHandle scan cannot find a window that the windows action
+            # (which already enumerates) happily lists.
             $fallback = [IntPtr]::Zero
             foreach ($handle in [DshInput]::TopLevelWindows()) {
                 if (-not [DshInput]::IsWindowVisible($handle)) { continue }
@@ -335,9 +345,21 @@ switch ($action) {
             }
             if ($target -eq [IntPtr]::Zero) { $target = $fallback }
             if ($target -eq [IntPtr]::Zero) { Write-ActionError "no visible top-level window matches '$windowTitle'; pass an hwnd if the window is hidden to the tray" }
-            $raised = [DshInput]::Activate($target)
-            if (-not $raised) { $notes += "Windows refused the foreground request for '$([DshInput]::WindowTitle($target))'; the taskbar entry may still need a click." }
+            $label = "'" + [DshInput]::WindowTitle($target) + "'"
+            $null = [DshInput]::Activate($target)
             Start-Sleep -Milliseconds 220
+        }
+
+        # Ask the desktop, not the API. SetForegroundWindow is documented to be
+        # unreliable about its return value, and the state that decides where the
+        # next click lands is the foreground window, not what the call returned.
+        if (-not [DshInput]::IsForeground($target)) {
+            $holder = [DshInput]::ForegroundTitle()
+            if ($tolerant) {
+                $notes += "Windows would not hand focus to $label; '$holder' kept it (tolerant: continuing)."
+            } else {
+                Write-ActionError "could not bring $label to the foreground; '$holder' still holds it, so the rest of this batch would land there. Pass tolerant: true on this step if the coordinates are right either way."
+            }
         }
     }
     'windows' {
