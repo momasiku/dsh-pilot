@@ -116,6 +116,60 @@ is byte-identical to the previous one of the same session, the image is not atta
 (or stored) again — the result says `unchanged: true` and the coordinates from the
 frame the model already has still apply. `forceImage: true` overrides it.
 
+## Reading the control tree
+
+A screenshot costs a guess: the model finds a button in pixels, estimates its centre,
+clicks, and takes another frame to see whether the guess was right. Windows exposes the
+same control through UI Automation as a role, a name and a rectangle, so the click
+becomes the centre of that rectangle and nothing has to be looked at.
+
+```js
+desktop_control({ action: 'controls', title: 'Notepad' })
+// 4  [Button] '最小化' @ 887,1 45x39
+// 14 [Button] '新建会话' @ 12,54 256x24
+// 23 [Edit]   '搜索会话名称' @ 204,238 4x20  offscreen
+
+desktop_control({ action: 'click', target: 14, title: 'Notepad' })
+```
+
+**The tree is not a faster screenshot; it is a different trade.**
+
+| | screenshot | control tree |
+| --- | --- | --- |
+| one read | ~150 ms, ~1k tokens | ~130-300 ms, ~850 tokens (filtered) |
+| click target | estimated from pixels | the control's exact rectangle |
+| state | "looks disabled" | `enabled`, `offscreen`, `HasKeyboardFocus`, `IsSelected`, value |
+| availability | always | **not always** - see below |
+
+Per call the tree is slower or level. Per task it is much faster, because one read
+resolves several targets without another frame and without another round trip.
+
+**It does not always exist.** A canvas, a drawing surface, a custom-painted list and an
+Electron window that publishes nothing all give an empty or useless tree. That is why
+the screenshot path is still there and still the fallback: read the tree first, take a
+frame when the tree is empty or when you need to see what is drawn rather than what is
+declared.
+
+**Three things worth knowing.**
+
+- An index addresses one row of one listing. It is resolved against a fresh read at
+  click time, and the worker remembers the listing it handed out, so a row that changed
+  identity fails loudly instead of being clicked by position:
+  `the control at index 4 is not the one that was listed: expected [Button] 'OK', found [Button] 'Cancel'`.
+- `meaningfulOnly` (default `true`) returns only the roles a person can operate. On a
+  real 673-element window that is 77 elements and ~850 tokens instead of 9k - the rest
+  is layout panes with no name, no state and nothing to click. Pass `false` for the
+  whole tree.
+- `includeValues` is off by default: structure is not content. Password fields are
+  masked even when it is on.
+
+**When the thing you want has no tree of its own** - a chat transcript, a canvas, a
+custom-painted panel - do not look for it. Look for what surrounds it and subtract: the
+composer is an `Edit` with a rectangle, the window has a rectangle, so the transcript is
+what is left between them. Or skip the geometry: select the item in the tree, confirm
+with `HasKeyboardFocus` that the keyboard is where you want it, type, press Enter. That
+last step is something a screenshot cannot do - it can show a caret, not a promise.
+
 ## Why it is safe
 
 Giving a model hands is the part worth getting right:
@@ -178,6 +232,26 @@ and what `dsh plugin add` checks before it installs anything. Requirements:
 
 ### Recent changes
 
+**0.5.11** — the control tree, and two fixes that make a batch honest.
+
+- **`controls` reads the window's UI Automation tree**, and `target` clicks a listed
+  control's exact rectangle, so a named control no longer has to be found in pixels.
+  It takes no screenshot, so it pays no settle. Measured on a 673-element window:
+  **0.65 s** and **~850 tokens** filtered (77 operable elements) against ~9k
+  unfiltered. The worker remembers the listing it handed out, so an index whose row
+  changed identity fails instead of clicking whatever took its place.
+- **The settle was paid even when nothing was captured** (0.5.9). It exists so a frame
+  is not taken mid-repaint; `desktop_control` applied it on every call, capturing or
+  not. Measured **814 ms -> 12 ms** for a non-capturing action.
+- **A refused `focus` was reported as success** (0.5.9). The step recorded a note, said
+  `ok`, and the rest of the batch went to whichever window was actually in front. It
+  now checks the foreground window after the attempt — the state, not
+  `SetForegroundWindow`'s return value — and fails, naming both. `tolerant: true`
+  restores the old behaviour for a caller whose coordinates are right either way.
+- **The peer range now accepts the 0.2.1 host generation** (0.5.10). The 0.2.1 tuple
+  needed its own prerelease comparator: a prerelease only satisfies a range when a
+  comparator carries a prerelease tag on the same `major.minor.patch`.
+
 **0.5.8** — two fixes, and the package is now on npm as
 [`@momasiku/dsh-pilot`](https://www.npmjs.com/package/@momasiku/dsh-pilot).
 
@@ -224,7 +298,7 @@ coordinate contract for that frame.
 
 | parameter | type | meaning |
 | --- | --- | --- |
-| `action` | string, required | `click`, `doubleClick`, `rightClick`, `middleClick`, `move`, `drag`, `scroll`, `type`, `key`, `focus`, `windows` |
+| `action` | string, required | `click`, `doubleClick`, `rightClick`, `middleClick`, `move`, `drag`, `scroll`, `type`, `key`, `focus`, `windows`, `controls` |
 | `x`, `y` | integer | target in physical screen pixels; required by the pointer actions and by scroll-at-a-point |
 | `toX`, `toY` | integer | drag end point, or a nonzero value to make `scroll` horizontal |
 | `text` | string | text to insert for `type` |
@@ -236,12 +310,22 @@ coordinate contract for that frame.
 | `capture` | boolean | capture a fresh frame after acting (default `true`) |
 | `settleMs` | integer | wait before that capture so the screen can repaint (default 750) |
 | `forceImage` | boolean | attach the frame even when it repeats the previous frame of the session |
+| `target` | integer | pointer actions: click the control at this index from a `controls` listing instead of `x`/`y` |
+| `includeValues` | boolean | `controls`: also return each control's value (default `false`; passwords masked) |
+| `meaningfulOnly` | boolean | `controls`: only operable roles (default `true`) |
+| `tolerant` | boolean | `focus`: record a note instead of failing when Windows refuses the foreground |
 
 `type` delivers text as **one paste** (clipboard set, `Ctrl+V`, clipboard restored), so
 applications see a single insertion — multi-line text and CJK included — instead of a
 burst of per-character keystrokes. `windows` returns every visible titled top-level
 window with its bounds, minimized state, and which is foreground: useful before
 clicking anything.
+
+`controls` returns the window's control tree as one line per control — `index [Role]
+'Name' @ left,top widthxheight` plus `disabled`/`offscreen`/`value` — and takes no
+screenshot (pass `capture: true` if you want one anyway). Feed an index back as
+`target` to click that control's exact centre. See **Reading the control tree** above
+for when a tree exists and when a frame is still the right tool.
 
 ### `desktop_sequence`
 
@@ -447,6 +531,52 @@ DSH：desktop_sequence([focus "报表.xlsx", click 812,430, type "Q3 收入", ke
 
 **没变化的帧不重复发送**：每次截图都带 `frameHash`，与同会话上一帧逐字节相同时就不重复附图（也不重复存储），结果里写 `unchanged: true`，模型手上那张图的坐标继续有效；想看就传 `forceImage: true`。
 
+## 读控件树
+
+截图是要靠猜的：模型在像素里找到按钮、估个中心、点一下，再截一张图看猜没猜对。
+而 Windows 通过 UI Automation 直接把同一个控件交出来——角色、名字、矩形——于是点击
+就变成「那个矩形的中心」，什么也不用看。
+
+```js
+desktop_control({ action: 'controls', title: '记事本' })
+// 4  [Button] '最小化' @ 887,1 45x39
+// 14 [Button] '新建会话' @ 12,54 256x24
+// 23 [Edit]   '搜索会话名称' @ 204,238 4x20  offscreen
+
+desktop_control({ action: 'click', target: 14, title: '记事本' })
+```
+
+**控件树不是更快的截图，是另一种取舍。**
+
+| | 截图 | 控件树 |
+| --- | --- | --- |
+| 读一次 | ~150 ms，~1k token | ~130-300 ms，~850 token（过滤后） |
+| 点击位置 | 从像素里估 | 控件的精确矩形 |
+| 状态 | 「看着像禁用」 | `enabled`、`offscreen`、`HasKeyboardFocus`、`IsSelected`、值 |
+| 可用性 | 永远有 | **不一定有**，见下 |
+
+按单次调用看，树更慢或打平；按单个任务看，树快得多——一次读取能定位好几个目标，
+既不用多截一张图，也不用多跑一轮推理。
+
+**它不是总存在。** canvas、绘图面、自绘列表、以及什么都不上报的 Electron 窗口，
+给出的树要么是空的要么没意义。所以截图这条路还在，而且仍然是兜底：先读树，
+树为空、或者你需要看「画出来什么」而不是「声明了什么」时，再截一张图。
+
+**三个要知道的点。**
+
+- 索引只针对「某一次列表」。点击时会重新读一遍再解析，而且暖 worker 记着它发出去的
+  那份列表，所以某一行换了身份会明确报错，而不是按位置点下去：
+  `the control at index 4 is not the one that was listed: expected [Button] 'OK', found [Button] 'Cancel'`。
+- `meaningfulOnly`（默认 `true`）只返回人能操作的控件。在一个真实的 673 元素窗口上，
+  这是 77 个元素、约 850 token，而不是 9k——其余全是没名字、没状态、点了也没反应的
+  布局面板。要整棵树就传 `false`。
+- `includeValues` 默认关闭：结构不是内容。即使打开，密码框也会被打码。
+
+**当你要找的东西本身没有树**——聊天记录、画布、自绘面板——不要去找它。去找围着它的
+东西再做减法：输入框是个带矩形的 `Edit`，窗口有矩形，那么聊天区就是它们之间剩下的那块。
+或者干脆不用几何：在树里选中那一条，用 `HasKeyboardFocus` 确认键盘落点就是你要的地方，
+打字，回车。最后这一步是截图做不到的——截图能给你一根光标，给不了保证。
+
 ## 为什么安全
 
 给模型装上手，最该讲究的就是这一块：
@@ -485,6 +615,13 @@ dsh plugin --profile <你的profile> add "file:E:\path\to\dsh-pilot"
 要求 DSH **0.1.5-rc.2 至 0.2.x**（即 `package.json` 里的 peer 范围，也是 `dsh plugin add` 在安装前的门禁）。环境要求：**Windows**、PowerShell 5.1 或 7、以及声明了图像输入的模型线路（`deepseek-flash` 可以）。
 
 ### 最近改动
+
+**0.5.11** —— 控件树，外加两个让批量操作「不说谎」的修复。
+
+- **`controls` 读窗口的 UI Automation 树**，`target` 点列表里那个控件的精确矩形，于是有名字的控件不必再去像素里找。它不截图，所以也不付 settle。在 673 个元素的窗口上实测：过滤后 **0.65 秒、约 850 token**（77 个可操作元素），不过滤约 9k。暖 worker 记着它发出去的那份列表，所以某一行换了身份会报错，而不是点到搬进来的那个。
+- **不截图的动作也在付 settle**（0.5.9）。settle 本是为了「别在重绘中途取帧」，但 `desktop_control` 每次调用都付。实测不截图的动作用时 **814 ms → 12 ms**。
+- **`focus` 被拒绝却报成功**（0.5.9）。那一步只记一条备注、仍然说 `ok`，于是批量剩下的步骤全打进了真正在前台的那个窗口。现在改成在尝试之后检查真实前台——看状态，不看 `SetForegroundWindow` 的返回值——不符就报错并说出两个窗口。`tolerant: true` 可以恢复旧行为，给「坐标反正都对」的调用方留口子。
+- **peer 范围开始接受 0.2.1 世代**（0.5.10）。`0.2.1` 这个元组需要它自己的预发布比较符：预发布版本只有在某个比较符与它同属一个 `major.minor.patch`、且自身带预发布标签时才放行。
 
 **0.5.8** —— 两个修复，同时包已发布到 npm：[`@momasiku/dsh-pilot`](https://www.npmjs.com/package/@momasiku/dsh-pilot)。
 

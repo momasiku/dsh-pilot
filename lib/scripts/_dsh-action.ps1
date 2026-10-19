@@ -10,9 +10,19 @@
 # a hashtable instead of being printed.
 $ErrorActionPreference = 'Stop'
 
+# UI Automation: the control tree, for a caller that would rather read a control's
+# name and rectangle than guess its pixels. Loaded from here so every entry script
+# that dot-sources this file gets it for free.
+. (Join-Path $PSScriptRoot '_dsh-uia.ps1')
+
 # Set by Write-ActionError so a caller can forward the structured payload a thrown
 # failure carries (cancellation is not just an error message).
 $script:ActionStopPayload = $null
+
+# The last controls listing handed out, keyed by element index. A flat listing can
+# keep its length while its rows change, so an index that still resolves can still
+# point at a different control; this is what lets a click notice that.
+$script:UiListing = $null
 
 function Write-ActionError([string] $message) {
     $script:ActionStopPayload = [ordered]@{ ok = $false; error = $message }
@@ -156,12 +166,75 @@ Execute one action. $Config is the request object the callers already build
 (action, x, y, toX, toY, amount, text, key, title, button, hwnd, cancelFile,
 settleMs). Returns the same shape the one-shot script used to print.
 #>
+function Find-DshWindowHandle([string] $needle) {
+    # Foreground wins, otherwise the first visible match: the same rule focus uses,
+    # so a title means the same window to every action that takes one.
+    $lower = $needle.ToLowerInvariant()
+    $fallback = [IntPtr]::Zero
+    foreach ($handle in [DshInput]::TopLevelWindows()) {
+        if (-not [DshInput]::IsWindowVisible($handle)) { continue }
+        $title = [DshInput]::WindowTitle($handle)
+        if ($title.Length -eq 0) { continue }
+        $owner = [uint32] 0
+        $null = [DshInput]::GetWindowThreadProcessId($handle, [ref] $owner)
+        $processName = Get-ProcessNameSafe $owner
+        $hit = $title.ToLowerInvariant().Contains($lower)
+        if (-not $hit -and $null -ne $processName) { $hit = $processName.ToLowerInvariant().Contains($lower) }
+        if (-not $hit) { continue }
+        if ([DshInput]::IsForeground($handle)) { return $handle }
+        if ($fallback -eq [IntPtr]::Zero) { $fallback = $handle }
+    }
+    return $fallback
+}
+
+function Get-DshTargetPoint([string] $indexText, [IntPtr] $hwnd, [string] $title) {
+    # An index addresses a node only against the listing it came from. Resolving it
+    # again is what turns 'the button I saw' into 'the button that is there now',
+    # and an index that no longer resolves fails instead of clicking its successor.
+    $index = 0
+    if (-not [int]::TryParse($indexText, [ref] $index)) { Write-ActionError ('target must be the index of a control listed by ''controls'', got ''{0}''' -f $indexText) }
+    $handle = $hwnd
+    if ($handle -eq [IntPtr]::Zero) {
+        if ([string]::IsNullOrWhiteSpace($title)) { Write-ActionError ('target {0} needs a window: pass title or hwnd with it' -f $index) }
+        $handle = Find-DshWindowHandle $title
+        if ($handle -eq [IntPtr]::Zero) { Write-ActionError ('target {0} needs a window: no visible top-level window matches ''{1}''' -f $index, $title) }
+    }
+    $element = Resolve-DshUiaIndex -Handle $handle -Index $index
+    if ($null -eq $element) { Write-ActionError ('the tree changed: index {0} is past the end of the listing for ''{1}''. Read controls again.' -f $index, [DshInput]::WindowTitle($handle)) }
+    if ($null -ne $script:UiListing -and $script:UiListing.handle -eq [long] $handle -and $script:UiListing.items.ContainsKey($index)) {
+        # Compare identity, not just existence: a reorder keeps the index valid.
+        $gotRole = ''
+        $gotName = ''
+        try {
+            $gotRole = $element.Current.ControlType.ProgrammaticName -replace 'ControlType\.', ''
+            $gotName = [string] $element.Current.Name
+        } catch { }
+        $want = $script:UiListing.items[$index]
+        if ($gotRole -ne $want.role -or $gotName -ne $want.name) {
+            Write-ActionError ('the control at index {0} is not the one that was listed: expected [{1}] ''{2}'', found [{3}] ''{4}''. Read controls again.' -f $index, $want.role, $want.name, $gotRole, $gotName)
+        }
+    }
+    $centre = Get-DshUiaCentre -Element $element
+    if ($null -eq $centre) { Write-ActionError ('the control at index {0} has no on-screen rectangle - it may be scrolled out of view or collapsed' -f $index) }
+    return @($centre.x, $centre.y)
+}
+
 function Invoke-DshAction {
     param([object] $Config)
 
     function Get-Param([string] $key) {
         if ($null -ne $Config -and $Config.PSObject.Properties.Name -contains $key) { return $Config.$key }
         return $null
+    }
+
+    # x/y, or the centre of the control a target path addresses. One entry point so
+    # every pointer action accepts both spellings without repeating the branch.
+    function Get-AnchoredPoint([string] $what) {
+        $targetPath = [string] (Get-Param 'target')
+        if (-not [string]::IsNullOrWhiteSpace($targetPath)) {
+            return Get-DshTargetPoint $targetPath $script:TargetHwnd $windowTitle
+        }
+        return Get-Point (Get-Param 'x') (Get-Param 'y') $what
     }
 
     $script:CancelFile = [string] (Get-Param 'cancelFile')
@@ -199,7 +272,7 @@ function Invoke-DshAction {
 
 switch ($action) {
     'click' {
-        $point = Get-Point (Get-Param 'x') (Get-Param 'y') 'click'
+        $point = Get-AnchoredPoint 'click'
         $null = [DshInput]::SetCursorPos($point[0], $point[1])
         Start-Sleep -Milliseconds 80
         Assert-Alive
@@ -209,7 +282,7 @@ switch ($action) {
         [DshInput]::Button($button, $false)
     }
     'doubleClick' {
-        $point = Get-Point (Get-Param 'x') (Get-Param 'y') 'doubleClick'
+        $point = Get-AnchoredPoint 'doubleClick'
         $null = [DshInput]::SetCursorPos($point[0], $point[1])
         Start-Sleep -Milliseconds 80
         Assert-Alive
@@ -221,7 +294,7 @@ switch ($action) {
         [DshInput]::Button($button, $true); Start-Sleep -Milliseconds 40; [DshInput]::Button($button, $false)
     }
     'rightClick' {
-        $point = Get-Point (Get-Param 'x') (Get-Param 'y') 'rightClick'
+        $point = Get-AnchoredPoint 'rightClick'
         $null = [DshInput]::SetCursorPos($point[0], $point[1])
         Start-Sleep -Milliseconds 80
         Assert-Alive
@@ -231,7 +304,7 @@ switch ($action) {
         [DshInput]::Button('right', $false)
     }
     'middleClick' {
-        $point = Get-Point (Get-Param 'x') (Get-Param 'y') 'middleClick'
+        $point = Get-AnchoredPoint 'middleClick'
         $null = [DshInput]::SetCursorPos($point[0], $point[1])
         Start-Sleep -Milliseconds 80
         Assert-Alive
@@ -241,7 +314,7 @@ switch ($action) {
         [DshInput]::Button('middle', $false)
     }
     'move' {
-        $point = Get-Point (Get-Param 'x') (Get-Param 'y') 'move'
+        $point = Get-AnchoredPoint 'move'
         $null = [DshInput]::SetCursorPos($point[0], $point[1])
         # The move is queued, so an immediate read can still return the previous
         # position; wait (bounded) until the pointer is where the caller asked.
@@ -303,8 +376,47 @@ switch ($action) {
             catch { Write-ActionError "the keystroke '$keySpec' could not be delivered: $($_.Exception.Message)" }
         }
     }
-    'focus' {
-        # A refused hand-off used to be a note: the step reported ok and the batch
+    'controls' {
+        # Read the window's UI Automation tree and return it as text. This is the
+        # cheap half of seeing: a control's name and rectangle, no frame, no pixels.
+        # It returns its own result and returns early so it never pays the settle
+        # or the capture - the whole point is that no screenshot is needed.
+        $treeHandle = $script:TargetHwnd
+        if ($treeHandle -eq [IntPtr]::Zero) {
+            if ([string]::IsNullOrWhiteSpace($windowTitle)) { Write-ActionError 'controls requires a title, or an hwnd' }
+            $treeHandle = Find-DshWindowHandle $windowTitle
+            if ($treeHandle -eq [IntPtr]::Zero) { Write-ActionError ('no visible top-level window matches ''{0}''; pass an hwnd if the window is hidden to the tray' -f $windowTitle) }
+        }
+        $includeValues = $false
+        $ivRaw = Get-Param 'includeValues'
+        if ($null -ne $ivRaw) { $includeValues = [bool] $ivRaw }
+        $meaningfulOnly = $true
+        $moRaw = Get-Param 'meaningfulOnly'
+        if ($null -ne $moRaw) { $meaningfulOnly = [bool] $moRaw }
+        $tree = Get-DshUiaNodes -Handle $treeHandle -IncludeValues $includeValues -MeaningfulOnly $meaningfulOnly
+        if (-not $tree.ok) { Write-ActionError $tree.error }
+        $items = @{}
+        foreach ($n in $tree.nodes) { $items[[int] $n.index] = @{ role = [string] $n.role; name = [string] $n.name } }
+        $script:UiListing = @{ handle = [long] $treeHandle; items = $items }
+        $lines = Format-DshUiaNodes -Nodes $tree.nodes -Truncated $tree.truncated
+        $treeCursor = [DshInput]::Cursor()
+        $result = [ordered]@{
+            ok                = $true
+            action            = 'controls'
+            cursor            = [ordered]@{ x = $treeCursor.X; y = $treeCursor.Y }
+            foregroundTitle   = [DshInput]::ForegroundTitle()
+            foregroundClass   = [DshInput]::ForegroundClass()
+            foregroundProcess = Get-ProcessNameSafe ([uint32] [DshInput]::ForegroundPid())
+            controls          = $lines
+            controlCount      = $tree.nodes.Count
+            controlsTruncated = [bool] $tree.truncated
+            controlsWindow    = [DshInput]::WindowTitle($treeHandle)
+            notes             = $notes
+            actedAt           = [DateTimeOffset]::Now.ToString('o')
+        }
+        return $result
+    }
+    'focus' {        # A refused hand-off used to be a note: the step reported ok and the batch
         # carried on, so every later click and keystroke went to whatever window was
         # actually in front. That is the one failure this plugin must not report as
         # success, so it is an error now; tolerant keeps the old behaviour for a
