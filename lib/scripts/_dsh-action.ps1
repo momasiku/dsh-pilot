@@ -24,6 +24,12 @@ $script:ActionStopPayload = $null
 # point at a different control; this is what lets a click notice that.
 $script:UiListing = $null
 
+# Chromium builds its accessibility tree lazily: the first client to ask gets a
+# nearly empty answer while the tree is still being constructed. Measured on the
+# harness window right after a restart: 3 elements, then 77 a moment later. One
+# retry per worker turns that into a correct first answer.
+$script:UiWarmed = $false
+
 function Write-ActionError([string] $message) {
     $script:ActionStopPayload = [ordered]@{ ok = $false; error = $message }
     throw [System.Exception]::new($message)
@@ -394,11 +400,26 @@ switch ($action) {
         $moRaw = Get-Param 'meaningfulOnly'
         if ($null -ne $moRaw) { $meaningfulOnly = [bool] $moRaw }
         $tree = Get-DshUiaNodes -Handle $treeHandle -IncludeValues $includeValues -MeaningfulOnly $meaningfulOnly
+        if (-not $script:UiWarmed -and $tree.total -lt 8) {
+            # A window that really has fewer than eight elements pays one extra read
+            # once per worker; a cold Electron window is the case this exists for.
+            Start-Sleep -Milliseconds 300
+            $tree = Get-DshUiaNodes -Handle $treeHandle -IncludeValues $includeValues -MeaningfulOnly $meaningfulOnly
+        }
+        if ($tree.total -ge 8) { $script:UiWarmed = $true }
         if (-not $tree.ok) { Write-ActionError $tree.error }
         $items = @{}
         foreach ($n in $tree.nodes) { $items[[int] $n.index] = @{ role = [string] $n.role; name = [string] $n.name } }
         $script:UiListing = @{ handle = [long] $treeHandle; items = $items }
         $lines = Format-DshUiaNodes -Nodes $tree.nodes -Truncated $tree.truncated
+        if ($meaningfulOnly -and $tree.nodes.Count -eq 0) {
+            # An empty list would read as 'this window has no tree', which is the one
+            # wrong conclusion to leave a caller with: say what is actually there.
+            $full = Get-DshUiaNodes -Handle $treeHandle -MeaningfulOnly $false
+            if ($full.nodes.Count -gt 0) {
+                $lines = @(('(no operable controls here; the window has {0} elements - pass meaningfulOnly:false to see them)' -f $full.nodes.Count))
+            }
+        }
         $treeCursor = [DshInput]::Cursor()
         $result = [ordered]@{
             ok                = $true
