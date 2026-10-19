@@ -232,6 +232,18 @@ and what `dsh plugin add` checks before it installs anything. Requirements:
 
 ### Recent changes
 
+**0.5.14** — the coordinate contract stops guessing how big the image you see is.
+
+- **The request pipeline resizes again after capture**, and this plugin never saw
+  that step: on a 2560x1600 display the frame reached the model as 1610x1006 while
+  the contract said "delivered at capture size … do not rescale", so every reading
+  taken off it was 1.59x off. The contract now **predicts** the projected size from
+  the image budget the deployment publishes, and prints the size and the multiplier:
+  `2560x1600 capture -> 1609x1006 preview, multiply every reading by 1.5911`. A frame
+  whose area fits the budget arrives untouched, so framing the window or a region
+  gives a true 1:1 frame — 1365x960 does, 1024x768 does, 4K and 5K say 2.2642x and
+  3.0189x instead.
+
 **0.5.12** — a cold tree, and an empty list that explained nothing.
 
 - **Chromium builds its accessibility tree lazily**, and the first caller pays for it:
@@ -627,6 +639,10 @@ dsh plugin --profile <你的profile> add "file:E:\path\to\dsh-pilot"
 要求 DSH **0.1.5-rc.2 至 0.2.x**（即 `package.json` 里的 peer 范围，也是 `dsh plugin add` 在安装前的门禁）。环境要求：**Windows**、PowerShell 5.1 或 7、以及声明了图像输入的模型线路（`deepseek-flash` 可以）。
 
 ### 最近改动
+
+**0.5.14** —— 坐标契约不再猜「你看到的那张图有多大」。
+
+- **请求管线会在抓取之后再缩一次**，而插件看不到这一步：2560×1600 的屏幕上，帧送到模型时是 1610×1006，契约却写着「交付即抓取尺寸……不要缩放」，于是每个读数都偏 1.59 倍。现在契约用部署公布的图片预算**预测**投影尺寸，并把尺寸和乘数一起写出来：`2560x1600 抓取 → 1609x1006 预览，把每个读数乘 1.5911`。面积落在预算内的帧会原样送达，所以抓窗口或抓区域能得到真正的 1:1 —— 1365×960 可以，1024×768 可以；4K 和 5K 则分别写 2.2642 倍和 3.0189 倍。
 
 **0.5.12** —— 冷树，以及一个什么都没说的空列表。
 
