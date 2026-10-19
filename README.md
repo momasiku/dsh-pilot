@@ -232,6 +232,18 @@ and what `dsh plugin add` checks before it installs anything. Requirements:
 
 ### Recent changes
 
+**0.5.12** — a cold tree, and an empty list that explained nothing.
+
+- **Chromium builds its accessibility tree lazily**, and the first caller pays for it:
+  measured on the harness window right after a restart, 3 elements at 1.2 s and 77
+  elements at 0.3 s on the next call. A caller that trusts the first answer concludes
+  the window has no tree and falls back to pixels for nothing. `controls` now retries
+  once, 300 ms later, when the worker has not yet seen a real tree and the answer is
+  suspiciously small.
+- **A filtered listing that legitimately matches nothing** now says so, instead of
+  returning an empty list that reads as "this window has no tree":
+  `(no operable controls here; the window has 2 elements - pass meaningfulOnly:false to see them)`.
+
 **0.5.11** — the control tree, and two fixes that make a batch honest.
 
 - **`controls` reads the window's UI Automation tree**, and `target` clicks a listed
@@ -615,6 +627,11 @@ dsh plugin --profile <你的profile> add "file:E:\path\to\dsh-pilot"
 要求 DSH **0.1.5-rc.2 至 0.2.x**（即 `package.json` 里的 peer 范围，也是 `dsh plugin add` 在安装前的门禁）。环境要求：**Windows**、PowerShell 5.1 或 7、以及声明了图像输入的模型线路（`deepseek-flash` 可以）。
 
 ### 最近改动
+
+**0.5.12** —— 冷树，以及一个什么都没说的空列表。
+
+- **Chromium 的无障碍树是懒加载的**，而且由第一个来问的人付账：实测重启后在 1.2 秒时只有 3 个元素，下一次调用 0.3 秒时是 77 个。信任第一个答案的人会认定「这窗口没有树」，白白退回像素。现在 `controls` 在「worker 还没见过完整树、且结果异常少」时会等 300 ms 重试一次。
+- **过滤后确实什么都没匹配到时，现在会明说**，而不是返回一个读起来像「这里没有树」的空列表：`(no operable controls here; the window has 2 elements - pass meaningfulOnly:false to see them)`。
 
 **0.5.11** —— 控件树，外加两个让批量操作「不说谎」的修复。
 
