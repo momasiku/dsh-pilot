@@ -2,6 +2,8 @@
 
 # dsh-pilot
 
+## 让 DSH 看见并高效地操作你的电脑
+
 **Give DeepSeek Harness hands and eyes on your desktop.**
 
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com/p/momasiku/dsh-pilot/)
