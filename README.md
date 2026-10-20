@@ -4,13 +4,12 @@
 
 **Give DeepSeek Harness hands and eyes on your desktop.**
 
+[![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com/p/momasiku/dsh-pilot/)
 [![npm](https://img.shields.io/npm/v/@momasiku/dsh-pilot?label=npm)](https://www.npmjs.com/package/@momasiku/dsh-pilot)
 [![compat](https://github.com/momasiku/dsh-pilot/actions/workflows/compat.yml/badge.svg)](https://github.com/momasiku/dsh-pilot/actions/workflows/compat.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ![platform](https://img.shields.io/badge/platform-Windows-0078d4.svg)
-![DSH](https://img.shields.io/badge/DSH-0.1.5--rc.2%20%E2%86%92%200.2.x-5b50ed.svg)
-[![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com/p/momasiku/dsh-pilot/)
 
 [English](#why-this-exists) · [中文说明](#中文说明)
 
