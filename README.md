@@ -2,7 +2,7 @@
 
 # dsh-pilot
 
-<h1 align="center">让 DSH 看见并高效地操作你的电脑</h1>
+## 让 DSH 看见并高效地操作你的电脑
 
 **Give DeepSeek Harness hands and eyes on your desktop.**
 
