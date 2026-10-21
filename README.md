@@ -30,7 +30,7 @@ looks at the real pixels and then operates them:
 | **`desktop_sequence`** | runs a **whole batch** of those actions in one call and looks once at the end |
 
 ```text
-You : 把浏览器里那个报表的第三列改名成 "Q3 收入"，然后保存
+You : 把桌面上那个报表的第三列改名成 "Q3 收入"，然后保存
 DSH : desktop_sequence([focus "报表.xlsx", click 683,192, type "Q3 收入", key enter, key ctrl+s])
       → 1 round trip, 1 screenshot, per-step timings, done
 ```
@@ -517,7 +517,7 @@ DSH 原本只会"说"：它能推理、能写代码、能规划，但**看不见
 | **`desktop_sequence`** | **一次调用跑完一整串动作**，最后只看一眼结果 |
 
 ```text
-你 ：把浏览器里那张报表的第三列改名成 "Q3 收入"，然后保存
+你 ：把桌面上那张报表的第三列改名成 "Q3 收入"，然后保存
 DSH：desktop_sequence([focus "报表.xlsx", click 683,192, type "Q3 收入", key enter, key ctrl+s])
      → 1 次往返、1 张截图、每步耗时，完成
 ```
