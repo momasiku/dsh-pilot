@@ -23,6 +23,16 @@ touch it: you describe what is on screen, you take the screenshots, you do the
 clicking, and you report what happened. **dsh-pilot closes that loop.** The model
 looks at the real pixels and then operates them:
 
+### Demos
+
+![dsh-pilot drawing a mechanical plate in AutoCAD: the model types REC and the corner coordinates, the inner outline, five circles, the centre lines and two linear dimensions into the command line, then zooms to extents](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-cad.gif)
+
+**A CAD drawing, drawn by the model.** It drives AutoCAD's own command line — `REC` → `0,0` → `240,150`, the inner outline, five holes, centre lines and two dimensions — and installs nothing inside AutoCAD.
+
+![dsh-pilot renaming a column in LibreOffice Calc: focus the workbook, move the pointer to C1, click, paste "Q3 收入", press Enter, Ctrl+S — all in one desktop_sequence call](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-excel.gif)
+
+**A spreadsheet edit, in one call.** `desktop_sequence` focuses the workbook, moves the pointer to C1, clicks, pastes `Q3 收入`, presses Enter and saves — one round trip for the whole chain.
+
 | tool | what it does |
 | --- | --- |
 | **`screen_view`** | captures the live desktop and returns the PNG as a **real image block** the model can see — not OCR, not a text summary |
@@ -34,8 +44,6 @@ You : 把桌面上那个报表的第三列改名成 "Q3 收入"，然后保存
 DSH : desktop_sequence([focus "报表.xlsx", click 683,192, type "Q3 收入", key enter, key ctrl+s])
       → 1 round trip, 1 screenshot, per-step timings, done
 ```
-
-![dsh-pilot renaming a column in LibreOffice Calc: focus the workbook, move the pointer to C1, click, paste "Q3 收入", press Enter, Ctrl+S — all in one desktop_sequence call](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-excel.gif)
 
 ## Why this exists
 
@@ -510,6 +518,16 @@ DSH 原本只会"说"：它能推理、能写代码、能规划，但**看不见
 
 **dsh-pilot 把这个环闭上**：模型直接看真实像素，然后自己动手。
 
+### 实例演示
+
+![dsh-pilot 在 AutoCAD 里画一块机械板：模型把 REC、角点坐标、内轮廓、五个圆、中心线和两道线性标注依次输入命令行，最后缩放到范围](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-cad.gif)
+
+**模型自己画出来的 CAD 图。** 用的就是 AutoCAD 自己的命令行——`REC` → `0,0` → `240,150`、内轮廓、五个圆孔、中心线、两道尺寸，**AutoCAD 里什么都没装**。
+
+![dsh-pilot 在 LibreOffice Calc 里改一列表头：聚焦工作簿、鼠标移到 C1、点击、粘贴「Q3 收入」、回车、Ctrl+S —— 全部在一次 desktop_sequence 调用里完成](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-excel.gif)
+
+**一次调用改完一张表。** `desktop_sequence` 聚焦工作簿、把鼠标移到 C1、点击、粘贴「Q3 收入」、回车、保存——整串动作只花一次往返。
+
 | 工具 | 作用 |
 | --- | --- |
 | **`screen_view`** | 抓取当前屏幕，把 PNG 作为**真正的图像块**交给模型（不是 OCR、不是文字描述），连光标位置、前台窗口、各显示器范围一起给出 |
@@ -521,8 +539,6 @@ DSH 原本只会"说"：它能推理、能写代码、能规划，但**看不见
 DSH：desktop_sequence([focus "报表.xlsx", click 683,192, type "Q3 收入", key enter, key ctrl+s])
      → 1 次往返、1 张截图、每步耗时，完成
 ```
-
-![dsh-pilot 在 LibreOffice Calc 里改一列表头：聚焦工作簿、鼠标移到 C1、点击、粘贴「Q3 收入」、回车、Ctrl+S —— 全部在一次 desktop_sequence 调用里完成](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-excel.gif)
 
 ## 它到底解决了什么
 
