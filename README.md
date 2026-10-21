@@ -31,9 +31,11 @@ looks at the real pixels and then operates them:
 
 ```text
 You : 把浏览器里那个报表的第三列改名成 "Q3 收入"，然后保存
-DSH : desktop_sequence([focus "报表.xlsx", click 812,430, type "Q3 收入", key enter, key ctrl+s])
+DSH : desktop_sequence([focus "报表.xlsx", click 683,192, type "Q3 收入", key enter, key ctrl+s])
       → 1 round trip, 1 screenshot, per-step timings, done
 ```
+
+![dsh-pilot renaming a column in LibreOffice Calc: focus the workbook, move the pointer to C1, click, paste "Q3 收入", press Enter, Ctrl+S — all in one desktop_sequence call](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-excel.gif)
 
 ## Why this exists
 
@@ -516,9 +518,11 @@ DSH 原本只会"说"：它能推理、能写代码、能规划，但**看不见
 
 ```text
 你 ：把浏览器里那张报表的第三列改名成 "Q3 收入"，然后保存
-DSH：desktop_sequence([focus "报表.xlsx", click 812,430, type "Q3 收入", key enter, key ctrl+s])
+DSH：desktop_sequence([focus "报表.xlsx", click 683,192, type "Q3 收入", key enter, key ctrl+s])
      → 1 次往返、1 张截图、每步耗时，完成
 ```
+
+![dsh-pilot 在 LibreOffice Calc 里改一列表头：聚焦工作簿、鼠标移到 C1、点击、粘贴「Q3 收入」、回车、Ctrl+S —— 全部在一次 desktop_sequence 调用里完成](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-excel.gif)
 
 ## 它到底解决了什么
 
