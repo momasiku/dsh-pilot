@@ -84,7 +84,10 @@ function frameValue({ delivered, captured, rulers = true, image = true }) {
 	check('shrunk frame reports both sizes', text.includes('<image_size delivered="1974x873" captured="2261x1000">1974x873</image_size>'), text.split('\n')[2]);
 	check('shrunk frame states the ratio', /delivered 1974x873 = 0\.873x capture/.test(text), (text.match(/<delivered_scale>.*<\/delivered_scale>/) ?? ['none'])[0]);
 	check('shrunk frame gives the multiplier', text.includes('multiply image readings by 1.1454'), text.includes('1.1454') ? 'present' : 'missing');
-	check('shrunk frame no longer promises 1:1', !text.includes('call desktop_control with exactly x and y'));
+	// The contract no longer predicts the projected size at all: it states the capture
+	// size, says a step it cannot see may shrink the frame, and names the preview size
+	// the message itself reports as the authoritative one.
+	check('shrunk frame stops treating the capture size as the size on screen', !text.includes('one image pixel is one real screen pixel') && text.includes('request preview'), text.includes('request preview') ? 'present' : 'missing');
 	const violations = validateJsonSchemaValue(screenView.output.schema, value);
 	check('shrunk frame matches the closed output schema', violations.length === 0, violations.slice(0, 2).join('; '));
 }
@@ -101,7 +104,7 @@ function frameValue({ delivered, captured, rulers = true, image = true }) {
 		capture,
 		capturePath: capture.path
 	})[0].text;
-	check('desktop_control repeats the multiplier for its frame', controlText.includes('1.1454') && !controlText.includes('exactly x and y'), controlText.split('\n').pop());
+	check('desktop_control spells the formula out with its own width', controlText.includes('2261 / preview_width') && controlText.includes('request preview'), controlText.split('\n').pop());
 
 	const sequenceText = sequence.output.render({}, {
 		risk: 'low',
@@ -113,7 +116,7 @@ function frameValue({ delivered, captured, rulers = true, image = true }) {
 		capture,
 		capturePath: capture.path
 	})[0].text;
-	check('desktop_sequence repeats the multiplier for its frame', sequenceText.includes('1.1454') && !sequenceText.includes('exactly x and y'), sequenceText.split('\n').pop());
+	check('desktop_sequence spells the formula out with its own width', sequenceText.includes('2261 / preview_width') && sequenceText.includes('request preview'), sequenceText.split('\n').pop());
 }
 
 // ── a frame with rulers turned off, and one that is not attached at all ────

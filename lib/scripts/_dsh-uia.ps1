@@ -124,7 +124,11 @@ function Format-DshUiaNodes {
         $lines.Add(('{0} [{1}] ''{2}'' @ {3}{4}' -f $n.index, $n.role, $name, $rect, $tail))
     }
     if ($Truncated) { $lines.Add(('... truncated at the node cap ({0} elements in total)' -f $Total)) }
-    return $lines.ToArray()
+    # The unary comma stops PowerShell unrolling a one-element array on return:
+    # without it a window that exposes a single control comes back as a bare
+    # string, and the result then fails its own schema ("controls must be an
+    # array"). Measured on a LibreOffice window that publishes exactly one.
+    return ,($lines.ToArray())
 }
 
 <# Resolve an index back to an element by re-reading the same listing. #>
