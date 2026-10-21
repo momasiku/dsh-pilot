@@ -1,4 +1,4 @@
-<img src="https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/banner.webp" alt="dsh-pilot — desktop control for DeepSeek Harness: hands and eyes on the whole machine" width="100%">
+<img src="https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/banner.webp" alt="dsh-pilot — desktop control for DeepSeek Harness: hands and eyes on the whole machine" width="100%">
 
 # dsh-pilot
 
@@ -25,11 +25,16 @@ looks at the real pixels and then operates them:
 
 ### Demos
 
-![dsh-pilot drawing a mechanical plate in AutoCAD: the model types REC and the corner coordinates, the inner outline, five circles, the centre lines and two linear dimensions into the command line, then zooms to extents](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-cad.gif)
+<!-- Served from jsDelivr (@main, cached for up to 12 h). If that host is
+     unreachable, the same files are at
+     https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-cad.gif
+     https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-excel.gif -->
+
+![dsh-pilot drawing a mechanical plate in AutoCAD: the model types REC and the corner coordinates, the inner outline, five circles, the centre lines and two linear dimensions into the command line, then zooms to extents](https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-cad.gif)
 
 **A CAD drawing, drawn by the model.** It drives AutoCAD's own command line — `REC` → `0,0` → `240,150`, the inner outline, five holes, centre lines and two dimensions — and installs nothing inside AutoCAD.
 
-![dsh-pilot renaming a column in LibreOffice Calc: focus the workbook, move the pointer to C1, click, paste "Q3 收入", press Enter, Ctrl+S — all in one desktop_sequence call](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-excel.gif)
+![dsh-pilot renaming a column in LibreOffice Calc: focus the workbook, move the pointer to C1, click, paste "Q3 收入", press Enter, Ctrl+S — all in one desktop_sequence call](https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-excel.gif)
 
 **A spreadsheet edit, in one call.** `desktop_sequence` focuses the workbook, moves the pointer to C1, clicks, pastes `Q3 收入`, presses Enter and saves — one round trip for the whole chain.
 
@@ -520,11 +525,16 @@ DSH 原本只会"说"：它能推理、能写代码、能规划，但**看不见
 
 ### 实例演示
 
-![dsh-pilot 在 AutoCAD 里画一块机械板：模型把 REC、角点坐标、内轮廓、五个圆、中心线和两道线性标注依次输入命令行，最后缩放到范围](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-cad.gif)
+<!-- 图片走 jsDelivr（@main，最长缓存 12 小时）。若该域名不可达，同样的文件在
+     raw.githubusercontent.com：
+     https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-cad.gif
+     https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-excel.gif -->
+
+![dsh-pilot 在 AutoCAD 里画一块机械板：模型把 REC、角点坐标、内轮廓、五个圆、中心线和两道线性标注依次输入命令行，最后缩放到范围](https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-cad.gif)
 
 **模型自己画出来的 CAD 图。** 用的就是 AutoCAD 自己的命令行——`REC` → `0,0` → `240,150`、内轮廓、五个圆孔、中心线、两道尺寸，**AutoCAD 里什么都没装**。
 
-![dsh-pilot 在 LibreOffice Calc 里改一列表头：聚焦工作簿、鼠标移到 C1、点击、粘贴「Q3 收入」、回车、Ctrl+S —— 全部在一次 desktop_sequence 调用里完成](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-excel.gif)
+![dsh-pilot 在 LibreOffice Calc 里改一列表头：聚焦工作簿、鼠标移到 C1、点击、粘贴「Q3 收入」、回车、Ctrl+S —— 全部在一次 desktop_sequence 调用里完成](https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-excel.gif)
 
 **一次调用改完一张表。** `desktop_sequence` 聚焦工作簿、把鼠标移到 C1、点击、粘贴「Q3 收入」、回车、保存——整串动作只花一次往返。
 
