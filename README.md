@@ -28,7 +28,8 @@ looks at the real pixels and then operates them:
 <!-- Served from raw.githubusercontent.com, the same host every asset here uses. If
      that host is slow where you read this, jsDelivr mirrors the same files:
      https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-cad.gif
-     https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-excel.gif -->
+     https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-excel.gif
+     https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-blender.gif -->
 
 ![dsh-pilot drawing a mechanical plate in AutoCAD: the model types REC and the corner coordinates, the inner outline, five circles, the centre lines and two linear dimensions into the command line, then zooms to extents](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-cad.gif)
 
@@ -38,17 +39,15 @@ looks at the real pixels and then operates them:
 
 **A spreadsheet edit, in one call.** `desktop_sequence` focuses the workbook, moves the pointer to C1, clicks, pastes `Q3 收入`, presses Enter and saves — one round trip for the whole chain.
 
+![dsh-pilot modelling in Blender: the viewport is cleared, a cube is added, and subdivision turns it into a sphere, then the model orbits to check it](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-blender.gif)
+
+**A 3D model, built from nothing.** It clears the viewport, adds a cube, then `Ctrl+1` and `Ctrl+3` subdivision turn that cube into a sphere. Real Blender 4.2 on a machine with **no GPU** — driven through Mesa's software OpenGL, which the model set up itself.
+
 | tool | what it does |
 | --- | --- |
 | **`screen_view`** | captures the live desktop and returns the PNG as a **real image block** the model can see — not OCR, not a text summary |
 | **`desktop_control`** | moves the pointer, clicks, drags, scrolls, types, sends keys, focuses and lists windows — and can capture the result in the same call |
 | **`desktop_sequence`** | runs a **whole batch** of those actions in one call and looks once at the end |
-
-```text
-You : 把桌面上那个报表的第三列改名成 "Q3 收入"，然后保存
-DSH : desktop_sequence([focus "报表.xlsx", click 683,192, type "Q3 收入", key enter, key ctrl+s])
-      → 1 round trip, 1 screenshot, per-step timings, done
-```
 
 ## Why this exists
 
@@ -528,7 +527,8 @@ DSH 原本只会"说"：它能推理、能写代码、能规划，但**看不见
 <!-- 图片走 raw.githubusercontent.com（本仓库所有资源都用这个域名）。若在你那边较慢，
      jsDelivr 上有同样的镜像：
      https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-cad.gif
-     https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-excel.gif -->
+     https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-excel.gif
+     https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-blender.gif -->
 
 ![dsh-pilot 在 AutoCAD 里画一块机械板：模型把 REC、角点坐标、内轮廓、五个圆、中心线和两道线性标注依次输入命令行，最后缩放到范围](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-cad.gif)
 
@@ -538,17 +538,15 @@ DSH 原本只会"说"：它能推理、能写代码、能规划，但**看不见
 
 **一次调用改完一张表。** `desktop_sequence` 聚焦工作簿、把鼠标移到 C1、点击、粘贴「Q3 收入」、回车、保存——整串动作只花一次往返。
 
+![dsh-pilot 在 Blender 里建模：先清空视口，加一个立方体，再用细分曲面把它磨成一个球，最后轨道旋转检查](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-blender.gif)
+
+**从零建一个 3D 模型。** 清空视口 → 加一个立方体 → `Ctrl+1`、`Ctrl+3` 两级细分，方盒子被磨成一个球。真机上的 Blender 4.2，跑在**一台没有显卡的机器**上——靠 Mesa 的软件 OpenGL，而那套环境也是模型自己配好的。
+
 | 工具 | 作用 |
 | --- | --- |
 | **`screen_view`** | 抓取当前屏幕，把 PNG 作为**真正的图像块**交给模型（不是 OCR、不是文字描述），连光标位置、前台窗口、各显示器范围一起给出 |
 | **`desktop_control`** | 移动鼠标、单击/双击/右键、拖拽、滚轮、打字、按键、聚焦与列出窗口；可以在同一次调用里顺手截一张，让效果立刻可见 |
 | **`desktop_sequence`** | **一次调用跑完一整串动作**，最后只看一眼结果 |
-
-```text
-你 ：把桌面上那张报表的第三列改名成 "Q3 收入"，然后保存
-DSH：desktop_sequence([focus "报表.xlsx", click 683,192, type "Q3 收入", key enter, key ctrl+s])
-     → 1 次往返、1 张截图、每步耗时，完成
-```
 
 ## 它到底解决了什么
 
