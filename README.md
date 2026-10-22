@@ -7,7 +7,7 @@
 **Give DeepSeek Harness hands and eyes on your desktop.**
 
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com/p/momasiku/dsh-pilot/)
-[![npm](https://img.shields.io/npm/v/@momasiku/dsh-pilot?label=npm)](https://www.npmjs.com/package/@momasiku/dsh-pilot)
+[![npm](https://img.shields.io/npm/v/@momasiku%2Fdsh-pilot?label=npm)](https://www.npmjs.com/package/@momasiku/dsh-pilot)
 [![compat](https://github.com/momasiku/dsh-pilot/actions/workflows/compat.yml/badge.svg)](https://github.com/momasiku/dsh-pilot/actions/workflows/compat.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
