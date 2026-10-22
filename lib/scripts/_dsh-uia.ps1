@@ -1,4 +1,4 @@
-# pilot / _dsh-uia.ps1 - read a window's UI Automation tree, and resolve a node by index.
+﻿# pilot / _dsh-uia.ps1 - read a window's UI Automation tree, and resolve a node by index.
 #
 # Why this exists: screen_view returns pixels. Finding a control in pixels costs the
 # model a guess at coordinates plus another frame to confirm the guess. UI Automation

@@ -1,4 +1,4 @@
-﻿# pilot / tools/script-smoke.ps1 - the PowerShell half, exercised directly.
+# pilot / tools/script-smoke.ps1 - the PowerShell half, exercised directly.
 #
 # Two things must stay true after extracting the shared cores:
 #   1. the one-shot desktop-action.ps1 still works (it is the fallback path), and
@@ -146,6 +146,18 @@ try {
   if (-not $worker.HasExited) { try { $worker.Kill() } catch { } }
   Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# PowerShell 5.1 reads a .ps1 without a byte-order mark as ANSI, so a UTF-8 file
+# with a Chinese caption in it renders as mojibake - and the caption is the only
+# part of this plugin a person actually sees. Losing the mark has happened twice
+# to an editor round-trip; fail here instead of in front of a user.
+$helperDir = Join-Path (Split-Path -Parent $PSScriptRoot) 'lib\scripts'
+$helperFiles = Get-ChildItem $helperDir -Filter *.ps1
+$noBom = @($helperFiles | Where-Object {
+    $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
+    -not ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+})
+Check 'every helper script starts with a UTF-8 BOM' ($noBom.Count -eq 0) (($noBom | ForEach-Object { $_.Name }) -join ', ')
 
 Write-Host ''
 Write-Host "script-smoke: $(if ($failures -eq 0) { 'OK' } else { "$failures check(s) failed" })"

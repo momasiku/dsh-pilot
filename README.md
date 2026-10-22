@@ -248,6 +248,51 @@ and what `dsh plugin add` checks before it installs anything. Requirements:
 
 ### Recent changes
 
+**0.6.0** — a takeover line, a lit pointer, and titles that stop hiding characters.
+
+- **The screen says who is driving.** While an action runs, one line of large
+  translucent type names the operator and the way out — `DSH 正在操作你的电脑 · 按 Esc
+  取消` — and a halo follows the cursor. No border: the first version drew one, and at
+  2560x1600 it was either invisible against a blue wallpaper or heavy enough to feel
+  like a frame. Sizes come from the virtual desktop, so a 4K wall and a 1080p laptop
+  get the same visual weight.
+- **Esc cancels the batch, not the step.** The overlay stamps the cancel token the
+  action loop already polled; that token now belongs to the whole `desktop_sequence`,
+  so a `wait` in the middle is interrupted too, and the result says why:
+  `the person pressed Esc; the batch stopped where it was`. Measured: a 12 s batch with
+  Esc at 4.5 s returned after 7.1 s.
+- **Titles are compared after stripping zero-width characters.** Edge's own title has
+  a U+200B inside `Microsoft Edge`; `focus "Microsoft Edge"` failed with "no visible
+  top-level window matches" on a window the person could read perfectly.
+- **`focus` accepts an `hwnd` on its own**, as the description always promised.
+- **Every helper script must keep its UTF-8 BOM** — `script-smoke` fails if one loses
+  it, because PowerShell 5.1 reads a BOM-less file as ANSI and the Chinese caption
+  renders as mojibake. This caught three other scripts that had already lost it.
+- The pointer halo is drawn, never written: no `SetCursorPos` and no input hook, which
+  is why the ring never makes a person's own mouse feel laggy.
+
+- **A takeover line and a lit pointer.** While an action runs, one line of large
+  translucent type names the operator and the way out — `DSH 正在操作你的电脑 · 按 Esc
+  取消` — and a halo follows the cursor. No border around the screen: the first version
+  drew one, and at 2560x1600 it was either invisible against a blue wallpaper or heavy
+  enough to feel like a frame. The type and the halo say the same thing without taking
+  the desktop hostage. Sizes come from the virtual desktop, so a 4K wall and a 1080p
+  laptop get the same visual weight.
+- **Esc cancels the batch, not the step.** The overlay stamps the same cancel token the
+  action loop already polled; that token now belongs to the whole `desktop_sequence`,
+  so a `wait` in the middle is interrupted too, and the result says why:
+  `the person pressed Esc; the batch stopped where it was`. Measured: a 12 s batch with
+  Esc at 4.5 s returned after 7.1 s.
+- **The pointer is lit, not taken over.** A halo tracks the cursor while the ring is up,
+  so it is obvious the movement is not yours. It is drawing, not the pointer: Windows
+  paints the real cursor above every window, so the halo sits under it and the pointer
+  reads as larger and lit without being replaced — and without the cursor being written,
+  which is what makes other agents' takeovers feel laggy. The halo lives in its own small
+  window rather than as a child of the ring: a child Grid with a runtime margin never
+  painted on this layered surface, while a window that is simply moved does.
+- Fully permissioned sessions are not asked again — the ring is the statement, not a
+  prompt. `takeover: false` turns it off.
+
 **0.5.14** — the coordinate contract stops guessing how big the image you see is.
 
 - **The request pipeline resizes again after capture**, and this plugin never saw

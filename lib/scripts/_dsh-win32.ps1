@@ -1,4 +1,4 @@
-# pilot / _dsh-win32.ps1 - the Win32 bridge and per-monitor DPI awareness, shared
+﻿# pilot / _dsh-win32.ps1 - the Win32 bridge and per-monitor DPI awareness, shared
 # by the one-shot scripts and by the persistent worker.
 #
 # Every block is idempotent: a process that already has the type does not compile

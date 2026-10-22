@@ -42,6 +42,15 @@ function Assert-Alive {
     }
 }
 
+function Remove-ZeroWidth([string] $text) {
+    # Chrome and Edge put U+200B inside their own window titles - the title reads
+    # "Microsoft Edge" but the bytes are "Microsoft​ Ed"; a substring search
+    # for what a person sees then finds nothing. Strip the invisible ones on both
+    # sides of the comparison instead of asking the caller to guess.
+    if ([string]::IsNullOrEmpty($text)) { return '' }
+    return ($text -replace '[​‌‍⁠﻿]', '')
+}
+
 function Get-ProcessNameSafe([uint32] $pidValue) {
     try { return (Get-Process -Id $pidValue -ErrorAction Stop).ProcessName } catch { return $null }
 }
@@ -175,7 +184,7 @@ settleMs). Returns the same shape the one-shot script used to print.
 function Find-DshWindowHandle([string] $needle) {
     # Foreground wins, otherwise the first visible match: the same rule focus uses,
     # so a title means the same window to every action that takes one.
-    $lower = $needle.ToLowerInvariant()
+    $lower = (Remove-ZeroWidth $needle).ToLowerInvariant()
     $fallback = [IntPtr]::Zero
     foreach ($handle in [DshInput]::TopLevelWindows()) {
         if (-not [DshInput]::IsWindowVisible($handle)) { continue }
@@ -184,7 +193,7 @@ function Find-DshWindowHandle([string] $needle) {
         $owner = [uint32] 0
         $null = [DshInput]::GetWindowThreadProcessId($handle, [ref] $owner)
         $processName = Get-ProcessNameSafe $owner
-        $hit = $title.ToLowerInvariant().Contains($lower)
+        $hit = (Remove-ZeroWidth $title).ToLowerInvariant().Contains($lower)
         if (-not $hit -and $null -ne $processName) { $hit = $processName.ToLowerInvariant().Contains($lower) }
         if (-not $hit) { continue }
         if ([DshInput]::IsForeground($handle)) { return $handle }
@@ -457,7 +466,7 @@ switch ($action) {
             Start-Sleep -Milliseconds 220
         } else {
             if ([string]::IsNullOrWhiteSpace($windowTitle)) { Write-ActionError 'focus requires a title, or an hwnd' }
-            $needle = $windowTitle.ToLowerInvariant()
+            $needle = (Remove-ZeroWidth $windowTitle).ToLowerInvariant()
             # EnumWindows, not Process.MainWindowHandle: an Electron, UWP or tray
             # window frequently reports no main window handle at all, so a
             # MainWindowHandle scan cannot find a window that the windows action
@@ -470,7 +479,7 @@ switch ($action) {
                 $owner = [uint32] 0
                 $null = [DshInput]::GetWindowThreadProcessId($handle, [ref] $owner)
                 $processName = Get-ProcessNameSafe $owner
-                $hit = $title.ToLowerInvariant().Contains($needle)
+                $hit = (Remove-ZeroWidth $title).ToLowerInvariant().Contains($needle)
                 if (-not $hit -and $null -ne $processName) { $hit = $processName.ToLowerInvariant().Contains($needle) }
                 if (-not $hit) { continue }
                 if ([DshInput]::IsForeground($handle)) { $target = $handle; break }

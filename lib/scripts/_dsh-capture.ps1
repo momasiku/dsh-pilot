@@ -1,4 +1,4 @@
-# pilot / _dsh-capture.ps1 - one capture, executed in whatever process called it.
+﻿# pilot / _dsh-capture.ps1 - one capture, executed in whatever process called it.
 #
 # Extracted from desktop-probe.ps1 so the same code serves two callers:
 #   * desktop-probe.ps1  - one frame per process (the fallback path);
