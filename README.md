@@ -13,7 +13,215 @@
 
 ![platform](https://img.shields.io/badge/platform-Windows-0078d4.svg)
 
-[English](#why-this-exists) · [中文说明](#中文说明)
+[中文说明](#中文说明) · [English](#english)
+
+# 中文说明
+
+> **给 DeepSeek Harness 装上眼睛和手——装在整个桌面上。**
+>
+> **范围**：Windows 桌面操控——模型看到的是真实屏幕，驱动的是真实鼠标与键盘。
+
+DSH 原本只会"说"：它能推理、能写代码、能规划，但**看不见你的屏幕，也动不了你的鼠标**。于是看屏幕的是你、截图的是你、点按钮的是你、出错了汇报的也是你——你成了它的手、它的眼，还兼任它的报错信息。
+
+**dsh-pilot 把这个环闭上**：模型直接看真实像素，然后自己动手。
+
+### 实例演示
+
+<!-- 图片走 raw.githubusercontent.com（本仓库所有资源都用这个域名）。若在你那边较慢，
+     jsDelivr 上有同样的镜像：
+     https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-cad.gif
+     https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-excel.gif
+     https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-blender.gif -->
+
+![dsh-pilot 在 AutoCAD 里画一块机械板：模型把 REC、角点坐标、内轮廓、五个圆、中心线和两道线性标注依次输入命令行，最后缩放到范围](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-cad.gif)
+
+**模型自己画出来的 CAD 图。** 用的就是 AutoCAD 自己的命令行——`REC` → `0,0` → `240,150`、内轮廓、五个圆孔、中心线、两道尺寸，**AutoCAD 里什么都没装**。
+
+![dsh-pilot 在 LibreOffice Calc 里改一列表头：聚焦工作簿、鼠标移到 C1、点击、粘贴「Q3 收入」、回车、Ctrl+S —— 全部在一次 desktop_sequence 调用里完成](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-excel.gif)
+
+**一次调用改完一张表。** `desktop_sequence` 聚焦工作簿、把鼠标移到 C1、点击、粘贴「Q3 收入」、回车、保存——整串动作只花一次往返。
+
+![dsh-pilot 在 Blender 里建模：先清空视口，加一个立方体，再用细分曲面把它磨成一个球，最后轨道旋转检查](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-blender.gif)
+
+**从零建一个 3D 模型。** 清空视口 → 加一个立方体 → `Ctrl+1`、`Ctrl+3` 两级细分，方盒子被磨成一个球。真机上的 Blender 4.2，跑在**一台没有显卡的机器**上——靠 Mesa 的软件 OpenGL，而那套环境也是模型自己配好的。
+
+| 工具 | 作用 |
+| --- | --- |
+| **`screen_view`** | 抓取当前屏幕，把 PNG 作为**真正的图像块**交给模型（不是 OCR、不是文字描述），连光标位置、前台窗口、各显示器范围一起给出 |
+| **`desktop_control`** | 移动鼠标、单击/双击/右键、拖拽、滚轮、打字、按键、聚焦与列出窗口；可以在同一次调用里顺手截一张，让效果立刻可见 |
+| **`desktop_sequence`** | **一次调用跑完一整串动作**，最后只看一眼结果 |
+
+## 它到底解决了什么
+
+桌面自动化的瓶颈**从来不是鼠标点得快不快**，而是 **"模型和电脑要来回说多少次话"**：
+
+| 一个五步任务（聚焦窗口 → 点输入框 → 打字 → 回车 → 看结果） | 只用 DSH | DSH + dsh-pilot |
+| --- | --- | --- |
+| 谁在看屏幕 | 你 | 模型，看真实像素 |
+| 谁在点击打字 | 你 | 模型 |
+| 模型 ↔ 电脑往返次数 | 5 次（每步一次，外加你的） | **1 次** |
+| 送给模型的截图 | 4–5 张 | **1 张** |
+| 出错时 | 你发现、你描述 | 同一次结果里就写明哪一步、为什么 |
+
+## 为什么坐标可信（这是"点得准"的关键）
+
+视觉驱动点击最经典的翻车方式是"坐标差一点点"，这里堵掉了三个来源：
+
+1. **两端都是 per-monitor DPI 感知**。非 DPI 感知的进程会被 Windows 骗——它把 2560×1600 的屏幕看成 1707×1067，于是按这种截图算出来的点击**必然偏**。传感器和执行器在做任何事之前都声明 `PER_MONITOR_AWARE_V2`，所以一个图像像素就是一个物理屏幕像素。
+2. **每张图都带坐标刻度尺**：上沿与左沿每 200px 一条刻度，标注的是**屏幕坐标**（不是图像偏移），还有 `origin x,y step n` 说明。模型直接读刻度，不用数像素；刻度是屏幕坐标，所以即使图片被压缩也依然有效。
+3. **信封如实说明交付尺寸**。如果宿主把图压小了，模型会收到比例与乘数；坐标契约也变成条件式——**只有在"交付尺寸 == 采集尺寸"时**才承诺"照用 x、y 即可"，否则明确要求乘多少：
+
+```text
+<delivered_scale>delivered 1974x873 = 0.873x capture; multiply image readings by 1.1454 to get screen pixels</delivered_scale>
+```
+
+## 为什么快
+
+批处理是大头（省的是往返，不是点击）；第二个大头是**不再每次重启 PowerShell**——一个常驻 worker 同时服务动作与截图：
+
+| 请求 | 一次性脚本 | 常驻 worker |
+| --- | --- | --- |
+| 动作（移动/点击/打字…） | ~0.9–2.0 秒 | **6–12 毫秒** |
+| 截图（主屏） | ~1.2–2.3 秒 | **~0.5 秒** |
+
+（2560×1600、150% 缩放、DSH 界面还在动的情况下实测）。worker 在第一次调用时后台预热，它需要的约 1 秒与第一张截图重叠，不会拖慢第一个动作。
+
+**没变化的帧不重复发送**：每次截图都带 `frameHash`，与同会话上一帧逐字节相同时就不重复附图（也不重复存储），结果里写 `unchanged: true`，模型手上那张图的坐标继续有效；想看就传 `forceImage: true`。
+
+## 读控件树
+
+截图是要靠猜的：模型在像素里找到按钮、估个中心、点一下，再截一张图看猜没猜对。
+而 Windows 通过 UI Automation 直接把同一个控件交出来——角色、名字、矩形——于是点击
+就变成「那个矩形的中心」，什么也不用看。
+
+```js
+desktop_control({ action: 'controls', title: '记事本' })
+// 4  [Button] '最小化' @ 887,1 45x39
+// 14 [Button] '新建会话' @ 12,54 256x24
+// 23 [Edit]   '搜索会话名称' @ 204,238 4x20  offscreen
+
+desktop_control({ action: 'click', target: 14, title: '记事本' })
+```
+
+**控件树不是更快的截图，是另一种取舍。**
+
+| | 截图 | 控件树 |
+| --- | --- | --- |
+| 读一次 | ~150 ms，~1k token | ~130-300 ms，~850 token（过滤后） |
+| 点击位置 | 从像素里估 | 控件的精确矩形 |
+| 状态 | 「看着像禁用」 | `enabled`、`offscreen`、`HasKeyboardFocus`、`IsSelected`、值 |
+| 可用性 | 永远有 | **不一定有**，见下 |
+
+按单次调用看，树更慢或打平；按单个任务看，树快得多——一次读取能定位好几个目标，
+既不用多截一张图，也不用多跑一轮推理。
+
+**它不是总存在。** canvas、绘图面、自绘列表、以及什么都不上报的 Electron 窗口，
+给出的树要么是空的要么没意义。所以截图这条路还在，而且仍然是兜底：先读树，
+树为空、或者你需要看「画出来什么」而不是「声明了什么」时，再截一张图。
+
+**三个要知道的点。**
+
+- 索引只针对「某一次列表」。点击时会重新读一遍再解析，而且暖 worker 记着它发出去的
+  那份列表，所以某一行换了身份会明确报错，而不是按位置点下去：
+  `the control at index 4 is not the one that was listed: expected [Button] 'OK', found [Button] 'Cancel'`。
+- `meaningfulOnly`（默认 `true`）只返回人能操作的控件。在一个真实的 673 元素窗口上，
+  这是 77 个元素、约 850 token，而不是 9k——其余全是没名字、没状态、点了也没反应的
+  布局面板。要整棵树就传 `false`。
+- `includeValues` 默认关闭：结构不是内容。即使打开，密码框也会被打码。
+
+**当你要找的东西本身没有树**——聊天记录、画布、自绘面板——不要去找它。去找围着它的
+东西再做减法：输入框是个带矩形的 `Edit`，窗口有矩形，那么聊天区就是它们之间剩下的那块。
+或者干脆不用几何：在树里选中那一条，用 `HasKeyboardFocus` 确认键盘落点就是你要的地方，
+打字，回车。最后这一步是截图做不到的——截图能给你一根光标，给不了保证。
+
+## 为什么安全
+
+给模型装上手，最该讲究的就是这一块：
+
+- **风险先声明、后强制**：默认 `low` 可自由批量；声明 `medium`/`high` 的批次、或含 `risk: "high"` 步骤的批次，**在碰桌面之前**就被拒绝，除非调用方带 `confirm: true`（而它只会在你同意之后带）。
+- **`dryRun: true`** 只校验并列出计划，不执行。
+- **默认遇错即停**：`focus` 失败绝不会有"接着往面前那个窗口里打字"的后续。
+- **定向输入**：步骤里指定了窗口（`hwnd`）时，注入前会再次把该窗口置前，点击不会落进旁边的窗口。
+- **结果不明就绝不静默重试**：worker 在请求送达后死掉时，动作按失败上报而不是重放——它可能已经生效了；截图没有副作用，才会自动回退重试。
+- **中断是真的能中断**：按 Esc 会写取消令牌，动作循环在每一步之间轮询（拖拽中、等待中、截图前都查），拖拽在 `finally` 里松开按键——中断的回合不会留下按住的鼠标，也不会把剩下的点击跑完。
+- **不会假装成功**：Windows 禁止向更高完整性级别（提权）的窗口注入输入，工具会如实报错。
+- **批量有上限**：`maxSequenceSteps`（默认 24）。
+
+## 安装
+
+```powershell
+# 从 npm 装（推荐）
+dsh plugin --profile <你的profile> add @momasiku/dsh-pilot
+
+# 或从仓库装
+dsh plugin --profile <你的profile> add github:momasiku/dsh-pilot
+
+# 或用本仓库 Release 里的预构建包，免构建授权
+dsh plugin --profile <你的profile> add https://github.com/momasiku/dsh-pilot/releases/latest/download/dsh-pilot.tgz
+
+# 或你本地已有的检出
+dsh plugin --profile <你的profile> add "file:E:\path\to\dsh-pilot"
+```
+
+**下载：** [npm 包](https://www.npmjs.com/package/@momasiku/dsh-pilot) · [预构建 tarball](https://github.com/momasiku/dsh-pilot/releases/latest/download/dsh-pilot.tgz) · [源码](https://github.com/momasiku/dsh-pilot)
+
+✅ **推荐用 npm 上的 scoped 包名 `@momasiku/dsh-pilot`。** 裸名 `dsh-pilot` 在 npm 上属于另一款无关的浏览器操控插件，而 `dsh plugin add` 总是先查 npm，所以别用裸名；用仓库地址或 tarball 也照样可以。
+
+包**自带 loader 行**：`plugin add` 会把 `@momasiku/dsh-pilot` 放进 `dsh.profile.bundles`，行本身来自包内的 `cordis.patch.yml`（由 `dsh.bundle.patch` 声明），所以不会像手写补丁行那样被插件管理器重写时弄丢。装完**重启一次 DSH Desktop**，然后**新开一个会话**，三个工具就会出现在工具列表里。
+
+要求 DSH **0.1.5-rc.2 至 0.2.x**（即 `package.json` 里的 peer 范围，也是 `dsh plugin add` 在安装前的门禁）。环境要求：**Windows**、PowerShell 5.1 或 7、以及声明了图像输入的模型线路（`deepseek-flash` 可以）。
+
+### 最近改动
+
+**0.5.14** —— 坐标契约不再猜「你看到的那张图有多大」。
+
+- **请求管线会在抓取之后再缩一次**，而插件看不到这一步：2560×1600 的屏幕上，帧送到模型时是 1610×1006，契约却写着「交付即抓取尺寸……不要缩放」，于是每个读数都偏 1.59 倍。现在契约用部署公布的图片预算**预测**投影尺寸，并把尺寸和乘数一起写出来：`2560x1600 抓取 → 1609x1006 预览，把每个读数乘 1.5911`。面积落在预算内的帧会原样送达，所以抓窗口或抓区域能得到真正的 1:1 —— 1365×960 可以，1024×768 可以；4K 和 5K 则分别写 2.2642 倍和 3.0189 倍。
+
+**0.5.12** —— 冷树，以及一个什么都没说的空列表。
+
+- **Chromium 的无障碍树是懒加载的**，而且由第一个来问的人付账：实测重启后在 1.2 秒时只有 3 个元素，下一次调用 0.3 秒时是 77 个。信任第一个答案的人会认定「这窗口没有树」，白白退回像素。现在 `controls` 在「worker 还没见过完整树、且结果异常少」时会等 300 ms 重试一次。
+- **过滤后确实什么都没匹配到时，现在会明说**，而不是返回一个读起来像「这里没有树」的空列表：`(no operable controls here; the window has 2 elements - pass meaningfulOnly:false to see them)`。
+
+**0.5.11** —— 控件树，外加两个让批量操作「不说谎」的修复。
+
+- **`controls` 读窗口的 UI Automation 树**，`target` 点列表里那个控件的精确矩形，于是有名字的控件不必再去像素里找。它不截图，所以也不付 settle。在 673 个元素的窗口上实测：过滤后 **0.65 秒、约 850 token**（77 个可操作元素），不过滤约 9k。暖 worker 记着它发出去的那份列表，所以某一行换了身份会报错，而不是点到搬进来的那个。
+- **不截图的动作也在付 settle**（0.5.9）。settle 本是为了「别在重绘中途取帧」，但 `desktop_control` 每次调用都付。实测不截图的动作用时 **814 ms → 12 ms**。
+- **`focus` 被拒绝却报成功**（0.5.9）。那一步只记一条备注、仍然说 `ok`，于是批量剩下的步骤全打进了真正在前台的那个窗口。现在改成在尝试之后检查真实前台——看状态，不看 `SetForegroundWindow` 的返回值——不符就报错并说出两个窗口。`tolerant: true` 可以恢复旧行为，给「坐标反正都对」的调用方留口子。
+- **peer 范围开始接受 0.2.1 世代**（0.5.10）。`0.2.1` 这个元组需要它自己的预发布比较符：预发布版本只有在某个比较符与它同属一个 `major.minor.patch`、且自身带预发布标签时才放行。
+
+**0.5.8** —— 两个修复，同时包已发布到 npm：[`@momasiku/dsh-pilot`](https://www.npmjs.com/package/@momasiku/dsh-pilot)。
+
+- **显示器几何会变陈旧，而且是静默的。** 原本显示器清单来自 `System.Windows.Forms.Screen.AllScreens`，这是静态缓存，只有进程处理 `WM_DISPLAYCHANGE` 时才刷新；而暖 worker 是没有消息泵的 `-NonInteractive` 读取循环，缓存永远不会失效。实测：存活 13 小时的 worker 报 `<screens>primary WinDisc 0,0,1600,900</screens>`，而同一份结果里的 `<image_size>` 是 `1024x768` —— 同一份结果两个答案，而坐标契约正是从这份帧里读的。现在每次截图都用 `EnumDisplayMonitors` 重新枚举，虚拟屏改用 `GetSystemMetrics`，两者都不缓存。
+- **冷启动每次都重付编译开销。** Win32 桥原本每次进程启动都要 `Add-Type` 编译一次，而且发生在 worker 能回答 `ready` 之前 —— 正是暖 worker 存在的意义所在的那笔开销。现在按源码哈希编译一次存成 DLL，之后直接加载。一次性抓帧 **2638 ms → 813 ms**，暖动作仍是 **9 ms**。改源码会换哈希、换 DLL，缓存绝不会遮蔽后续修复。
+
+npm 上的包名带 scope，是因为 `dsh-pilot` 这个名字在 npm 上属于另一款无关的浏览器操控插件。**仓库名仍然是 `momasiku/dsh-pilot`。**
+
+## 使用要点
+
+- 先 `desktop_control { action: "windows" }` 看清有哪些窗口、哪个在前台，再动手。
+- 多步任务优先用 `desktop_sequence`：把"聚焦 → 点击 → 输入 → 回车"写成一次调用。
+- 打字支持多行与中文（走剪贴板一次粘贴，之后恢复剪贴板）。
+- 想更省 token：`capture: "none"` 不附图，或依赖"未变化不重发"；想看得更清：`rulers: true`（默认开）。
+- 常用设置（`captureRetention`、`settleMs`、`stepSettleMs`、`maxSequenceSteps`、`useWorker`、`rulers`）写在配置行里，见上面的 Settings 一节。
+
+## 常见问题
+
+| 现象 | 原因与处理 |
+| --- | --- |
+| 提示找不到匹配窗口 | 窗口缩到托盘了，或标题变了：用 `action: "windows"` 列出来，或改用 `hwnd` 指定 |
+| 点击总是差一点 | 图片被宿主压小了：看 `<delivered_scale>` 的乘数并乘上去 |
+| 点了没反应 | 目标窗口可能是提权窗口，Windows 不允许跨完整性级别注入输入 |
+| 升级后工具不见了 | 重启 DSH Desktop：包的代码在加载时重新导入，profile 的插件行在启动时合成 |
+| 批次被拒绝执行 | 声明了 `medium`/`high`：经用户同意后带 `confirm: true` 重发，或先用 `dryRun: true` 看计划 |
+
+## License
+
+MIT © 2026 momasiku
+
+
+---
+
+# English
 
 > **Windows desktop control.** The model sees the real screen and drives the real
 > mouse and keyboard.
@@ -550,211 +758,6 @@ happens yet the caller sees an error. A schema-only check cannot see that failur
 mode, so `smoke.mjs` validates a realistic result object against each tool's compiled
 output schema, and additionally asserts that the validator itself catches the
 undeclared `ok`/`actedAt` keys that shipped once.
-
-## License
-
-MIT © 2026 momasiku
-
----
-
-# 中文说明
-
-> **给 DeepSeek Harness 装上眼睛和手——装在整个桌面上。**
->
-> **范围**：Windows 桌面操控——模型看到的是真实屏幕，驱动的是真实鼠标与键盘。
-
-DSH 原本只会"说"：它能推理、能写代码、能规划，但**看不见你的屏幕，也动不了你的鼠标**。于是看屏幕的是你、截图的是你、点按钮的是你、出错了汇报的也是你——你成了它的手、它的眼，还兼任它的报错信息。
-
-**dsh-pilot 把这个环闭上**：模型直接看真实像素，然后自己动手。
-
-### 实例演示
-
-<!-- 图片走 raw.githubusercontent.com（本仓库所有资源都用这个域名）。若在你那边较慢，
-     jsDelivr 上有同样的镜像：
-     https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-cad.gif
-     https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-excel.gif
-     https://cdn.jsdelivr.net/gh/momasiku/dsh-pilot@main/assets/dsh-pilot-blender.gif -->
-
-![dsh-pilot 在 AutoCAD 里画一块机械板：模型把 REC、角点坐标、内轮廓、五个圆、中心线和两道线性标注依次输入命令行，最后缩放到范围](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-cad.gif)
-
-**模型自己画出来的 CAD 图。** 用的就是 AutoCAD 自己的命令行——`REC` → `0,0` → `240,150`、内轮廓、五个圆孔、中心线、两道尺寸，**AutoCAD 里什么都没装**。
-
-![dsh-pilot 在 LibreOffice Calc 里改一列表头：聚焦工作簿、鼠标移到 C1、点击、粘贴「Q3 收入」、回车、Ctrl+S —— 全部在一次 desktop_sequence 调用里完成](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-excel.gif)
-
-**一次调用改完一张表。** `desktop_sequence` 聚焦工作簿、把鼠标移到 C1、点击、粘贴「Q3 收入」、回车、保存——整串动作只花一次往返。
-
-![dsh-pilot 在 Blender 里建模：先清空视口，加一个立方体，再用细分曲面把它磨成一个球，最后轨道旋转检查](https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/dsh-pilot-blender.gif)
-
-**从零建一个 3D 模型。** 清空视口 → 加一个立方体 → `Ctrl+1`、`Ctrl+3` 两级细分，方盒子被磨成一个球。真机上的 Blender 4.2，跑在**一台没有显卡的机器**上——靠 Mesa 的软件 OpenGL，而那套环境也是模型自己配好的。
-
-| 工具 | 作用 |
-| --- | --- |
-| **`screen_view`** | 抓取当前屏幕，把 PNG 作为**真正的图像块**交给模型（不是 OCR、不是文字描述），连光标位置、前台窗口、各显示器范围一起给出 |
-| **`desktop_control`** | 移动鼠标、单击/双击/右键、拖拽、滚轮、打字、按键、聚焦与列出窗口；可以在同一次调用里顺手截一张，让效果立刻可见 |
-| **`desktop_sequence`** | **一次调用跑完一整串动作**，最后只看一眼结果 |
-
-## 它到底解决了什么
-
-桌面自动化的瓶颈**从来不是鼠标点得快不快**，而是 **"模型和电脑要来回说多少次话"**：
-
-| 一个五步任务（聚焦窗口 → 点输入框 → 打字 → 回车 → 看结果） | 只用 DSH | DSH + dsh-pilot |
-| --- | --- | --- |
-| 谁在看屏幕 | 你 | 模型，看真实像素 |
-| 谁在点击打字 | 你 | 模型 |
-| 模型 ↔ 电脑往返次数 | 5 次（每步一次，外加你的） | **1 次** |
-| 送给模型的截图 | 4–5 张 | **1 张** |
-| 出错时 | 你发现、你描述 | 同一次结果里就写明哪一步、为什么 |
-
-## 为什么坐标可信（这是"点得准"的关键）
-
-视觉驱动点击最经典的翻车方式是"坐标差一点点"，这里堵掉了三个来源：
-
-1. **两端都是 per-monitor DPI 感知**。非 DPI 感知的进程会被 Windows 骗——它把 2560×1600 的屏幕看成 1707×1067，于是按这种截图算出来的点击**必然偏**。传感器和执行器在做任何事之前都声明 `PER_MONITOR_AWARE_V2`，所以一个图像像素就是一个物理屏幕像素。
-2. **每张图都带坐标刻度尺**：上沿与左沿每 200px 一条刻度，标注的是**屏幕坐标**（不是图像偏移），还有 `origin x,y step n` 说明。模型直接读刻度，不用数像素；刻度是屏幕坐标，所以即使图片被压缩也依然有效。
-3. **信封如实说明交付尺寸**。如果宿主把图压小了，模型会收到比例与乘数；坐标契约也变成条件式——**只有在"交付尺寸 == 采集尺寸"时**才承诺"照用 x、y 即可"，否则明确要求乘多少：
-
-```text
-<delivered_scale>delivered 1974x873 = 0.873x capture; multiply image readings by 1.1454 to get screen pixels</delivered_scale>
-```
-
-## 为什么快
-
-批处理是大头（省的是往返，不是点击）；第二个大头是**不再每次重启 PowerShell**——一个常驻 worker 同时服务动作与截图：
-
-| 请求 | 一次性脚本 | 常驻 worker |
-| --- | --- | --- |
-| 动作（移动/点击/打字…） | ~0.9–2.0 秒 | **6–12 毫秒** |
-| 截图（主屏） | ~1.2–2.3 秒 | **~0.5 秒** |
-
-（2560×1600、150% 缩放、DSH 界面还在动的情况下实测）。worker 在第一次调用时后台预热，它需要的约 1 秒与第一张截图重叠，不会拖慢第一个动作。
-
-**没变化的帧不重复发送**：每次截图都带 `frameHash`，与同会话上一帧逐字节相同时就不重复附图（也不重复存储），结果里写 `unchanged: true`，模型手上那张图的坐标继续有效；想看就传 `forceImage: true`。
-
-## 读控件树
-
-截图是要靠猜的：模型在像素里找到按钮、估个中心、点一下，再截一张图看猜没猜对。
-而 Windows 通过 UI Automation 直接把同一个控件交出来——角色、名字、矩形——于是点击
-就变成「那个矩形的中心」，什么也不用看。
-
-```js
-desktop_control({ action: 'controls', title: '记事本' })
-// 4  [Button] '最小化' @ 887,1 45x39
-// 14 [Button] '新建会话' @ 12,54 256x24
-// 23 [Edit]   '搜索会话名称' @ 204,238 4x20  offscreen
-
-desktop_control({ action: 'click', target: 14, title: '记事本' })
-```
-
-**控件树不是更快的截图，是另一种取舍。**
-
-| | 截图 | 控件树 |
-| --- | --- | --- |
-| 读一次 | ~150 ms，~1k token | ~130-300 ms，~850 token（过滤后） |
-| 点击位置 | 从像素里估 | 控件的精确矩形 |
-| 状态 | 「看着像禁用」 | `enabled`、`offscreen`、`HasKeyboardFocus`、`IsSelected`、值 |
-| 可用性 | 永远有 | **不一定有**，见下 |
-
-按单次调用看，树更慢或打平；按单个任务看，树快得多——一次读取能定位好几个目标，
-既不用多截一张图，也不用多跑一轮推理。
-
-**它不是总存在。** canvas、绘图面、自绘列表、以及什么都不上报的 Electron 窗口，
-给出的树要么是空的要么没意义。所以截图这条路还在，而且仍然是兜底：先读树，
-树为空、或者你需要看「画出来什么」而不是「声明了什么」时，再截一张图。
-
-**三个要知道的点。**
-
-- 索引只针对「某一次列表」。点击时会重新读一遍再解析，而且暖 worker 记着它发出去的
-  那份列表，所以某一行换了身份会明确报错，而不是按位置点下去：
-  `the control at index 4 is not the one that was listed: expected [Button] 'OK', found [Button] 'Cancel'`。
-- `meaningfulOnly`（默认 `true`）只返回人能操作的控件。在一个真实的 673 元素窗口上，
-  这是 77 个元素、约 850 token，而不是 9k——其余全是没名字、没状态、点了也没反应的
-  布局面板。要整棵树就传 `false`。
-- `includeValues` 默认关闭：结构不是内容。即使打开，密码框也会被打码。
-
-**当你要找的东西本身没有树**——聊天记录、画布、自绘面板——不要去找它。去找围着它的
-东西再做减法：输入框是个带矩形的 `Edit`，窗口有矩形，那么聊天区就是它们之间剩下的那块。
-或者干脆不用几何：在树里选中那一条，用 `HasKeyboardFocus` 确认键盘落点就是你要的地方，
-打字，回车。最后这一步是截图做不到的——截图能给你一根光标，给不了保证。
-
-## 为什么安全
-
-给模型装上手，最该讲究的就是这一块：
-
-- **风险先声明、后强制**：默认 `low` 可自由批量；声明 `medium`/`high` 的批次、或含 `risk: "high"` 步骤的批次，**在碰桌面之前**就被拒绝，除非调用方带 `confirm: true`（而它只会在你同意之后带）。
-- **`dryRun: true`** 只校验并列出计划，不执行。
-- **默认遇错即停**：`focus` 失败绝不会有"接着往面前那个窗口里打字"的后续。
-- **定向输入**：步骤里指定了窗口（`hwnd`）时，注入前会再次把该窗口置前，点击不会落进旁边的窗口。
-- **结果不明就绝不静默重试**：worker 在请求送达后死掉时，动作按失败上报而不是重放——它可能已经生效了；截图没有副作用，才会自动回退重试。
-- **中断是真的能中断**：按 Esc 会写取消令牌，动作循环在每一步之间轮询（拖拽中、等待中、截图前都查），拖拽在 `finally` 里松开按键——中断的回合不会留下按住的鼠标，也不会把剩下的点击跑完。
-- **不会假装成功**：Windows 禁止向更高完整性级别（提权）的窗口注入输入，工具会如实报错。
-- **批量有上限**：`maxSequenceSteps`（默认 24）。
-
-## 安装
-
-```powershell
-# 从 npm 装（推荐）
-dsh plugin --profile <你的profile> add @momasiku/dsh-pilot
-
-# 或从仓库装
-dsh plugin --profile <你的profile> add github:momasiku/dsh-pilot
-
-# 或用本仓库 Release 里的预构建包，免构建授权
-dsh plugin --profile <你的profile> add https://github.com/momasiku/dsh-pilot/releases/latest/download/dsh-pilot.tgz
-
-# 或你本地已有的检出
-dsh plugin --profile <你的profile> add "file:E:\path\to\dsh-pilot"
-```
-
-**下载：** [npm 包](https://www.npmjs.com/package/@momasiku/dsh-pilot) · [预构建 tarball](https://github.com/momasiku/dsh-pilot/releases/latest/download/dsh-pilot.tgz) · [源码](https://github.com/momasiku/dsh-pilot)
-
-✅ **推荐用 npm 上的 scoped 包名 `@momasiku/dsh-pilot`。** 裸名 `dsh-pilot` 在 npm 上属于另一款无关的浏览器操控插件，而 `dsh plugin add` 总是先查 npm，所以别用裸名；用仓库地址或 tarball 也照样可以。
-
-包**自带 loader 行**：`plugin add` 会把 `@momasiku/dsh-pilot` 放进 `dsh.profile.bundles`，行本身来自包内的 `cordis.patch.yml`（由 `dsh.bundle.patch` 声明），所以不会像手写补丁行那样被插件管理器重写时弄丢。装完**重启一次 DSH Desktop**，然后**新开一个会话**，三个工具就会出现在工具列表里。
-
-要求 DSH **0.1.5-rc.2 至 0.2.x**（即 `package.json` 里的 peer 范围，也是 `dsh plugin add` 在安装前的门禁）。环境要求：**Windows**、PowerShell 5.1 或 7、以及声明了图像输入的模型线路（`deepseek-flash` 可以）。
-
-### 最近改动
-
-**0.5.14** —— 坐标契约不再猜「你看到的那张图有多大」。
-
-- **请求管线会在抓取之后再缩一次**，而插件看不到这一步：2560×1600 的屏幕上，帧送到模型时是 1610×1006，契约却写着「交付即抓取尺寸……不要缩放」，于是每个读数都偏 1.59 倍。现在契约用部署公布的图片预算**预测**投影尺寸，并把尺寸和乘数一起写出来：`2560x1600 抓取 → 1609x1006 预览，把每个读数乘 1.5911`。面积落在预算内的帧会原样送达，所以抓窗口或抓区域能得到真正的 1:1 —— 1365×960 可以，1024×768 可以；4K 和 5K 则分别写 2.2642 倍和 3.0189 倍。
-
-**0.5.12** —— 冷树，以及一个什么都没说的空列表。
-
-- **Chromium 的无障碍树是懒加载的**，而且由第一个来问的人付账：实测重启后在 1.2 秒时只有 3 个元素，下一次调用 0.3 秒时是 77 个。信任第一个答案的人会认定「这窗口没有树」，白白退回像素。现在 `controls` 在「worker 还没见过完整树、且结果异常少」时会等 300 ms 重试一次。
-- **过滤后确实什么都没匹配到时，现在会明说**，而不是返回一个读起来像「这里没有树」的空列表：`(no operable controls here; the window has 2 elements - pass meaningfulOnly:false to see them)`。
-
-**0.5.11** —— 控件树，外加两个让批量操作「不说谎」的修复。
-
-- **`controls` 读窗口的 UI Automation 树**，`target` 点列表里那个控件的精确矩形，于是有名字的控件不必再去像素里找。它不截图，所以也不付 settle。在 673 个元素的窗口上实测：过滤后 **0.65 秒、约 850 token**（77 个可操作元素），不过滤约 9k。暖 worker 记着它发出去的那份列表，所以某一行换了身份会报错，而不是点到搬进来的那个。
-- **不截图的动作也在付 settle**（0.5.9）。settle 本是为了「别在重绘中途取帧」，但 `desktop_control` 每次调用都付。实测不截图的动作用时 **814 ms → 12 ms**。
-- **`focus` 被拒绝却报成功**（0.5.9）。那一步只记一条备注、仍然说 `ok`，于是批量剩下的步骤全打进了真正在前台的那个窗口。现在改成在尝试之后检查真实前台——看状态，不看 `SetForegroundWindow` 的返回值——不符就报错并说出两个窗口。`tolerant: true` 可以恢复旧行为，给「坐标反正都对」的调用方留口子。
-- **peer 范围开始接受 0.2.1 世代**（0.5.10）。`0.2.1` 这个元组需要它自己的预发布比较符：预发布版本只有在某个比较符与它同属一个 `major.minor.patch`、且自身带预发布标签时才放行。
-
-**0.5.8** —— 两个修复，同时包已发布到 npm：[`@momasiku/dsh-pilot`](https://www.npmjs.com/package/@momasiku/dsh-pilot)。
-
-- **显示器几何会变陈旧，而且是静默的。** 原本显示器清单来自 `System.Windows.Forms.Screen.AllScreens`，这是静态缓存，只有进程处理 `WM_DISPLAYCHANGE` 时才刷新；而暖 worker 是没有消息泵的 `-NonInteractive` 读取循环，缓存永远不会失效。实测：存活 13 小时的 worker 报 `<screens>primary WinDisc 0,0,1600,900</screens>`，而同一份结果里的 `<image_size>` 是 `1024x768` —— 同一份结果两个答案，而坐标契约正是从这份帧里读的。现在每次截图都用 `EnumDisplayMonitors` 重新枚举，虚拟屏改用 `GetSystemMetrics`，两者都不缓存。
-- **冷启动每次都重付编译开销。** Win32 桥原本每次进程启动都要 `Add-Type` 编译一次，而且发生在 worker 能回答 `ready` 之前 —— 正是暖 worker 存在的意义所在的那笔开销。现在按源码哈希编译一次存成 DLL，之后直接加载。一次性抓帧 **2638 ms → 813 ms**，暖动作仍是 **9 ms**。改源码会换哈希、换 DLL，缓存绝不会遮蔽后续修复。
-
-npm 上的包名带 scope，是因为 `dsh-pilot` 这个名字在 npm 上属于另一款无关的浏览器操控插件。**仓库名仍然是 `momasiku/dsh-pilot`。**
-
-## 使用要点
-
-- 先 `desktop_control { action: "windows" }` 看清有哪些窗口、哪个在前台，再动手。
-- 多步任务优先用 `desktop_sequence`：把"聚焦 → 点击 → 输入 → 回车"写成一次调用。
-- 打字支持多行与中文（走剪贴板一次粘贴，之后恢复剪贴板）。
-- 想更省 token：`capture: "none"` 不附图，或依赖"未变化不重发"；想看得更清：`rulers: true`（默认开）。
-- 常用设置（`captureRetention`、`settleMs`、`stepSettleMs`、`maxSequenceSteps`、`useWorker`、`rulers`）写在配置行里，见上面的 Settings 一节。
-
-## 常见问题
-
-| 现象 | 原因与处理 |
-| --- | --- |
-| 提示找不到匹配窗口 | 窗口缩到托盘了，或标题变了：用 `action: "windows"` 列出来，或改用 `hwnd` 指定 |
-| 点击总是差一点 | 图片被宿主压小了：看 `<delivered_scale>` 的乘数并乘上去 |
-| 点了没反应 | 目标窗口可能是提权窗口，Windows 不允许跨完整性级别注入输入 |
-| 升级后工具不见了 | 重启 DSH Desktop：包的代码在加载时重新导入，profile 的插件行在启动时合成 |
-| 批次被拒绝执行 | 声明了 `medium`/`high`：经用户同意后带 `confirm: true` 重发，或先用 `dryRun: true` 看计划 |
 
 ## License
 
