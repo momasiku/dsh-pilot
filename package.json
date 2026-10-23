@@ -1,7 +1,7 @@
 {
   "name": "@momasiku/dsh-pilot",
-  "version": "0.6.0",
-  "description": "Desktop vision and control for DeepSeek Harness - the whole Windows machine, any application, not browser automation: screen_view captures the live screen as an image the model can see, desktop_control drives the mouse, keyboard, and windows against the exact same pixel space; desktop_sequence runs a whole batch of actions in one call and looks once at the end.",
+  "version": "0.6.1",
+  "description": "DeepSeek Harness 的桌面自动化：给整台 Windows 机器装上眼睛和手。可以做人能做的任何事，包括且不仅限于CAD，WPS，浏览器操作，发微信。安全，快速，可靠，聪明，人性化。",
   "license": "MIT",
   "author": "momasiku",
   "type": "module",

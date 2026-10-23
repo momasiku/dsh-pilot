@@ -173,6 +173,12 @@ dsh plugin --profile <你的profile> add "file:E:\path\to\dsh-pilot"
 
 ### 最近改动
 
+**0.6.1** —— 简介和 README 都用中文先说。
+
+- **仓库简介和 npm 简介换成同一句中文**：能做和人一样的事，包括且不仅限于 CAD、WPS、浏览器操作、发微信；安全、快速、可靠、聪明、人性化。
+- **中文说明移到 README 顶部**，英文段落后置并加上 `# English` 标题，顶部语言链接同步调换。
+- 没有代码改动。
+
 **0.5.14** —— 坐标契约不再猜「你看到的那张图有多大」。
 
 - **请求管线会在抓取之后再缩一次**，而插件看不到这一步：2560×1600 的屏幕上，帧送到模型时是 1610×1006，契约却写着「交付即抓取尺寸……不要缩放」，于是每个读数都偏 1.59 倍。现在契约用部署公布的图片预算**预测**投影尺寸，并把尺寸和乘数一起写出来：`2560x1600 抓取 → 1609x1006 预览，把每个读数乘 1.5911`。面积落在预算内的帧会原样送达，所以抓窗口或抓区域能得到真正的 1:1 —— 1365×960 可以，1024×768 可以；4K 和 5K 则分别写 2.2642 倍和 3.0189 倍。
@@ -455,6 +461,15 @@ and what `dsh plugin add` checks before it installs anything. Requirements:
 (`deepseek-flash` does).
 
 ### Recent changes
+
+**0.6.1** — the description and the README lead with Chinese.
+
+- **The repository and npm descriptions are now the same Chinese sentence**: the
+  things a person can do — CAD, WPS, a browser, WeChat — and safe, fast, reliable,
+  smart, humane.
+- **The Chinese section moved to the top of the README**; the English one follows
+  under a `# English` heading, and the language links at the top were swapped.
+- No code changed.
 
 **0.6.0** — a takeover line, a lit pointer, and titles that stop hiding characters.
 
