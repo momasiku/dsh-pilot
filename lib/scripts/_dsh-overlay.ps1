@@ -43,6 +43,17 @@ function Log([string] $m) {
     try { [System.IO.File]::AppendAllText($logFile, ((Get-Date).ToString('HH:mm:ss.fff') + ' ' + $m + [Environment]::NewLine)) } catch { }
 }
 
+# One overlay per state directory. A host restart leaves the previous copy running
+# (it is unref'd and has no parent watch), and two copies draw the same caption on
+# the same desktop - they flash over each other. A named mutex is the cheapest way
+# to make the second one exit instead.
+$mutexName = 'Local\DshOverlay_' + ($StateDir -replace '[^A-Za-z0-9]', '_')
+$global:DshOvMutex = New-Object System.Threading.Mutex($false, $mutexName)
+if (-not $global:DshOvMutex.WaitOne(0)) {
+    Log 'another overlay owns this state dir; exiting'
+    exit 0
+}
+
 $global:DshOvVsL = [System.Windows.SystemParameters]::VirtualScreenLeft
 $global:DshOvVsT = [System.Windows.SystemParameters]::VirtualScreenTop
 $vw = [System.Windows.SystemParameters]::VirtualScreenWidth
@@ -226,6 +237,7 @@ function Update-State {
         if ($raw -eq $global:DshOvStoppedFor) { $show = $false } else { $global:DshOvCancelTarget = $raw }
     }
     if ($show) {
+        $global:DshOvMissTicks = 0
         if (-not $window.IsVisible) {
             # The desktop can change size between shows (a reconnect, a display mode
             # switch); re-fit rather than draw a 1080p ring on a 1600p desktop.
@@ -243,7 +255,16 @@ function Update-State {
         }
         Update-Halo
     } elseif ($window.IsVisible) {
+        # One failed stat is not "the host hid me". The host rewrites this file at the
+        # start of every action with a truncating write, and a Test-Path that lands in
+        # that window reads false - hiding on it produced a flash per action. Waiting
+        # two more ticks absorbs the write and still hides promptly (the host's own
+        # linger is two seconds).
+        $global:DshOvMissTicks++
+        if ($global:DshOvMissTicks -lt 3) { return }
         $window.Hide()
+        $global:DshOvMissTicks = 0
+        Log 'hidden'
         if ($global:DshOvHaloWin.IsVisible) { $global:DshOvHaloWin.Hide() }
         Disable-Hotkey
         $global:DshOvCancelTarget = ''
@@ -272,6 +293,7 @@ $window.Add_Closed({
 # kills the ring the moment the launcher is a short-lived shell. An idle timeout
 # bounds the leftover process without ever firing while it is in use.
 $global:DshOvTicks = 0
+$global:DshOvMissTicks = 0
 $global:DshOvIdleTicks = 0
 
 $timer = New-Object System.Windows.Threading.DispatcherTimer
@@ -296,6 +318,7 @@ $preHalo = New-Object System.Windows.Interop.WindowInteropHelper($haloWin)
 $preHaloHwnd = $preHalo.EnsureHandle()
 [DshOv]::ClickThrough($preHaloHwnd) | Out-Null
 
-$window.Show()
-$window.Hide()
+# No startup Show/Hide: the handles already exist (EnsureHandle above), and showing
+# then hiding here races the timer's first real Show - the overlay would log two
+# shows for the first action, which is the flicker this scene is trying to remove.
 [System.Windows.Threading.Dispatcher]::Run()

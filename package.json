@@ -1,6 +1,6 @@
 {
   "name": "@momasiku/dsh-pilot",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "DeepSeek Harness 的桌面自动化：给整台 Windows 机器装上眼睛和手。可以做人能做的任何事，包括且不仅限于CAD，WPS，浏览器操作，发微信。安全，快速，可靠，聪明，人性化。",
   "license": "MIT",
   "author": "momasiku",

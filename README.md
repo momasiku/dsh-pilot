@@ -173,6 +173,15 @@ dsh plugin --profile <你的profile> add "file:E:\path\to\dsh-pilot"
 
 ### 最近改动
 
+**0.6.4** —— 接管提示改成按回合显示。
+
+- **以前每个动作开关一次，画图这种连续操作就是一路闪。** 现在一个回合只显示一次，**最后一次动作后 2 秒**才隐藏；新动作会取消这个隐藏。
+- **首次出画约 0.7 秒**（不预热）。比这更短的单步动作仍然可能看不到第一帧 —— 这是不预热的代价。
+- **修掉启动竞态**：脚本末尾的 `Show()`/`Hide()` 会和定时器的第一次真实显示撞车，导致首个动作记两次 show。句柄已经由 `EnsureHandle()` 建好，那两句是多余的。
+- **`Test-Path` 短暂失败不再立即隐藏**：宿主每次动作都会截断重写 `show.txt`，正好撞上读不到就是一次假隐藏。现在连续三次读不到才隐藏。
+- **单实例互斥**：一个进程独占一个状态目录，DSH 重启留下的孤儿不会再和新进程抢同一块屏幕。
+- **新增 `tools/overlay-smoke.ps1`**：首次出画耗时、回合内不重显、结束只隐藏一次、第二份进程必须退出。
+
 **0.6.3** —— `controls` 的两处真问题（issue #1 / #2）。
 
 - **结构化输出里有、模型可见文本里没有**：`controlText()` 只拼了 action / cursor / foreground，把 `controls` 和 `windows` 整个丢了 —— 对纯文本模型来说，README 里说的「便宜路径」事实上不可用，只能退回截图。现在渲染成 `<controls>` / `<windows>` 块，并带上窗口名与计数。
@@ -475,6 +484,15 @@ and what `dsh plugin add` checks before it installs anything. Requirements:
 (`deepseek-flash` does).
 
 ### Recent changes
+
+**0.6.4** — the takeover prompt is held per round, not per action.
+
+- **It used to toggle on every action, so a run of small steps strobed.** One round now shows it once and hides it **two seconds after the last action**; a new action cancels that hide.
+- **First paint takes about 0.7 s** (no pre-warm, by request). A single action shorter than that can still miss the first frame - that is the price of not pre-warming.
+- **Fixed a startup race**: the `Show()`/`Hide()` at the end of the script collided with the timer's first real show, logging two shows for the first action. The handles already exist from `EnsureHandle()`, so those two lines were redundant.
+- **A transient `Test-Path` failure no longer hides the overlay**: the host rewrites `show.txt` with a truncating write on every action, and a check that lands in that window reads false. It now takes three consecutive misses.
+- **Single instance**: one process owns a state directory, so an overlay orphaned by a host restart cannot fight the new one for the same screen.
+- **New `tools/overlay-smoke.ps1`**: first-paint latency, no re-show inside a round, exactly one hide at the end, and a second copy must exit.
 
 **0.6.3** — two real `controls` bugs, both reported in issues #1 and #2.
 
