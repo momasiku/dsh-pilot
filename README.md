@@ -173,6 +173,12 @@ dsh plugin --profile <你的profile> add "file:E:\path\to\dsh-pilot"
 
 ### 最近改动
 
+**0.6.2** —— 兼容性声明落到能验证的地方。
+
+- **在 DSH 0.2.1-rc.3 上实测通过**：`screen_view` 抓屏、`windows` 枚举、`controls` 控件树、`desktop_sequence` 三步批次都正常，peer 声明 `>=0.2.1-0 <0.3.0-0` 本身就覆盖 rc.3。
+- **`check-peers` 新增 `--asar`**：以前它只校验开发副本 `node_modules`（可能落在旧代），现在可以直接读**已安装桌面端**的 `app.asar`，按里面真实携带的 dsh-* 版本判定 —— 也就是用户真正在跑的那一代。
+- **`--asar` 的两个细节**：Electron 的 fs 会把 `.asar` 当压缩包拦截，读取失败时回退到临时副本；asar 头部按 4 字节对齐填充 NUL，要剥掉尾部才能 `JSON.parse`。
+
 **0.6.1** —— 简介和 README 都用中文先说。
 
 - **仓库简介和 npm 简介换成同一句中文**：能做和人一样的事，包括且不仅限于 CAD、WPS、浏览器操作、发微信；安全、快速、可靠、聪明、人性化。
@@ -461,6 +467,12 @@ and what `dsh plugin add` checks before it installs anything. Requirements:
 (`deepseek-flash` does).
 
 ### Recent changes
+
+**0.6.2** — the compatibility claim now sits where it can be checked.
+
+- **Verified on DSH 0.2.1-rc.3**: `screen_view`, `windows`, `controls` and a three-step `desktop_sequence` all ran there, and the declared peer range `>=0.2.1-0 <0.3.0-0` already covered rc.3.
+- **`check-peers --asar`**: the check used to judge only the dev copy in `node_modules`, which can sit on an older generation than the app a user actually runs. It now reads the installed desktop app's `app.asar` and judges against the dsh-* versions that build really carries.
+- **Two details the flag had to handle**: Electron's patched fs treats any `.asar` path as an archive and refuses the bytes, so a failed read falls back to a temporary copy; and the asar header is NUL-padded to a four-byte boundary, so the padding has to go before `JSON.parse`.
 
 **0.6.1** — the description and the README lead with Chinese.
 
