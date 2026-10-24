@@ -1,4 +1,4 @@
-# pilot / tools/script-smoke.ps1 - the PowerShell half, exercised directly.
+﻿# pilot / tools/script-smoke.ps1 - the PowerShell half, exercised directly.
 #
 # Two things must stay true after extracting the shared cores:
 #   1. the one-shot desktop-action.ps1 still works (it is the fallback path), and
@@ -142,10 +142,33 @@ try {
   $worker.StandardInput.Flush()
   $exited = $worker.WaitForExit(5000)
   Check 'worker: quits on request' ($exited -eq $true) "exitCode=$(if ($exited) { $worker.ExitCode } else { 'still running' })"
+
+# A native Win32 dialog is the case the meaningfulOnly filter used to erase: every
+# child of a #32770 bridges through MSAA and reports as a Pane, so a whitelist
+# without Pane returned nothing at all for a dialog full of buttons. Win+R is the
+# cheapest one to raise without touching whatever the user has open.
+Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class SmokeKeys { [DllImport("user32.dll")] public static extern void keybd_event(byte b, byte s, uint f, UIntPtr e); }' -ErrorAction SilentlyContinue
+[SmokeKeys]::keybd_event(0x5B, 0, 0, [UIntPtr]::Zero)
+[SmokeKeys]::keybd_event(0x52, 0, 0, [UIntPtr]::Zero)
+Start-Sleep -Milliseconds 60
+[SmokeKeys]::keybd_event(0x52, 0, 2, [UIntPtr]::Zero)
+[SmokeKeys]::keybd_event(0x5B, 0, 2, [UIntPtr]::Zero)
+Start-Sleep -Milliseconds 1400
+try {
+  $dialog = Invoke-OneShot @{ action = 'controls'; title = '运行'; meaningfulOnly = $true; settleMs = 0 }
+  $names = @($dialog.value.controls | Where-Object { $_ -match "'取消'" -or $_ -match "'确定'" })
+  Check 'controls: a native dialog keeps its named Panes' ($dialog.value.ok -eq $true -and $dialog.value.controlCount -gt 0 -and $names.Count -gt 0) "count=$($dialog.value.controlCount) total=$($dialog.value.controlTotal) filtered=$($dialog.value.filteredOut)"
+  Check 'controls: the filter reports what it dropped' ([int] $dialog.value.controlTotal -ge [int] $dialog.value.controlCount) "total=$($dialog.value.controlTotal) kept=$($dialog.value.controlCount)"
+} finally {
+  [SmokeKeys]::keybd_event(0x1B, 0, 0, [UIntPtr]::Zero)
+  [SmokeKeys]::keybd_event(0x1B, 0, 2, [UIntPtr]::Zero)
+  Start-Sleep -Milliseconds 250
+}
 } finally {
   if (-not $worker.HasExited) { try { $worker.Kill() } catch { } }
   Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 }
+
 
 # PowerShell 5.1 reads a .ps1 without a byte-order mark as ANSI, so a UTF-8 file
 # with a Chinese caption in it renders as mojibake - and the caption is the only

@@ -439,6 +439,10 @@ switch ($action) {
             foregroundProcess = Get-ProcessNameSafe ([uint32] [DshInput]::ForegroundPid())
             controls          = $lines
             controlCount      = $tree.nodes.Count
+            # What the filter looked at and what it threw away, so an empty list can
+            # never be mistaken for a window that has nothing in it.
+            controlTotal      = [int] $tree.total
+            filteredOut       = [int] $tree.dropped
             controlsTruncated = [bool] $tree.truncated
             controlsWindow    = [DshInput]::WindowTitle($treeHandle)
             notes             = $notes

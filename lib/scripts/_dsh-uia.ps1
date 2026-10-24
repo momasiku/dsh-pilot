@@ -64,6 +64,7 @@ function Get-DshUiaNodes {
     $bulkRoles = @('DataItem','TreeItem','ListItem','MenuItem')
 
     $nodes = New-Object System.Collections.Generic.List[object]
+    $dropped = 0
     for ($i = 0; $i -lt $limit; $i++) {
         $el = $collection[$i]
         try {
@@ -82,11 +83,18 @@ function Get-DshUiaNodes {
                 }
             }
             $role = ($el.Cached.ControlType.ProgrammaticName -replace 'ControlType\.', '')
+            $elName = [string] $el.Cached.Name
             if ($MeaningfulOnly) {
-                if ($interactiveRoles -notcontains $role) { continue }
+                # Native Win32 dialogs (#32770) bridge through MSAA and report every
+                # child as a Pane, so a named Pane IS the control there; an unnamed one
+                # is layout. Without this the whole dialog filtered down to nothing.
+                $namedPane = ($role -eq 'Pane' -and $elName.Length -gt 0)
+                if ($interactiveRoles -notcontains $role -and -not $namedPane) { $dropped += 1; continue }
                 # A bulk container row with no name is addressable by index but carries
                 # nothing to reason about, and they are the bulk of a large list.
-                if ($bulkRoles -contains $role -and $name.Length -eq 0) { continue }
+                # This used to read $name, which was never assigned in this function, so
+                # every listed/tree/menu/data row was dropped whether it had a name or not.
+                if ($bulkRoles -contains $role -and $elName.Length -eq 0) { $dropped += 1; continue }
             }
             $nodes.Add([ordered]@{
                 index = $i
@@ -102,7 +110,7 @@ function Get-DshUiaNodes {
         }
     }
 
-    return [ordered]@{ ok = $true; nodes = $nodes; truncated = $truncated; total = $total }
+    return [ordered]@{ ok = $true; nodes = $nodes; truncated = $truncated; total = $total; dropped = $dropped }
 }
 
 <# Render the nodes as the text the model reads. One line per control. #>
