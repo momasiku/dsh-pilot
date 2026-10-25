@@ -176,11 +176,17 @@ try {
 # to an editor round-trip; fail here instead of in front of a user.
 $helperDir = Join-Path (Split-Path -Parent $PSScriptRoot) 'lib\scripts'
 $helperFiles = Get-ChildItem $helperDir -Filter *.ps1
-$noBom = @($helperFiles | Where-Object {
+# Only a script that carries non-ASCII needs the mark: PowerShell 5.1 decodes a
+# BOM-less file as ANSI, which turns Chinese into mojibake. A pure-ASCII helper
+# (0.6.5 moved the caption into a byte array) cannot be misread either way.
+$needBom = @($helperFiles | Where-Object {
     $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
-    -not ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+    $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+    $nonAscii = $false
+    foreach ($b in $bytes) { if ($b -gt 0x7F) { $nonAscii = $true; break } }
+    ($nonAscii -and -not $hasBom)
 })
-Check 'every helper script starts with a UTF-8 BOM' ($noBom.Count -eq 0) (($noBom | ForEach-Object { $_.Name }) -join ', ')
+Check 'every helper with non-ASCII starts with a UTF-8 BOM' ($needBom.Count -eq 0) (($needBom | ForEach-Object { $_.Name }) -join ', ')
 
 Write-Host ''
 Write-Host "script-smoke: $(if ($failures -eq 0) { 'OK' } else { "$failures check(s) failed" })"
