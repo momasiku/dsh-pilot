@@ -1,4 +1,4 @@
-﻿
+
 # pilot / _dsh-overlay.ps1 - the visible part of a takeover.
 #
 # Ring around every monitor, a caption naming the operator, and a halo that follows
@@ -14,6 +14,74 @@ param(
     [Parameter(Mandatory = $true)][string] $StateDir
 )
 $ErrorActionPreference = 'Stop'
+
+# Declare per-monitor v2 DPI awareness, and measure the scale anyway.
+#
+# Under powershell.exe the declaration below is a no-op: the host manifest settles the
+# process's awareness before the script runs, so this window stays DPI-unaware and
+# Windows lays it out in logical units (a 2560x1600 panel at 150% reports 1707x1067).
+# Laying out in logical units is fine - the caption scales with the OS - but
+# GetCursorPos answers in *physical* pixels, so the halo was drawn where the pointer is
+# not. Primary() reads the real display mode through EnumDisplaySettings, which is not
+# virtualised, and the caller divides the cursor position by the quotient.
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class DshOvDpi {
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct DEVMODE {
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
+        public short dmSpecVersion;
+        public short dmDriverVersion;
+        public short dmSize;
+        public short dmDriverExtra;
+        public int dmFields;
+        public int dmPositionX;
+        public int dmPositionY;
+        public int dmDisplayOrientation;
+        public int dmDisplayFixedOutput;
+        public short dmColor;
+        public short dmDuplex;
+        public short dmYResolution;
+        public short dmTTOption;
+        public short dmCollate;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;
+        public short dmLogPixels;
+        public int dmBitsPerPel;
+        public int dmPelsWidth;
+        public int dmPelsHeight;
+        public int dmDisplayFlags;
+        public int dmDisplayFrequency;
+        public int dmICMMethod;
+        public int dmICMIntent;
+        public int dmMediaType;
+        public int dmDitherType;
+        public int dmReserved1;
+        public int dmReserved2;
+        public int dmPanningWidth;
+        public int dmPanningHeight;
+    }
+    [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+    [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern bool EnumDisplaySettingsW(string device, int mode, ref DEVMODE devMode);
+    public static bool Apply() {
+        try { if (SetProcessDpiAwarenessContext(new IntPtr(-4))) return true; } catch { }
+        try { if (SetProcessDPIAware()) return true; } catch { }
+        return false;
+    }
+    /** Physical pixels of the current display mode, or null when the call fails. */
+    public static int[] Primary() {
+        try {
+            DEVMODE dm = new DEVMODE();
+            dm.dmSize = (short) Marshal.SizeOf(typeof(DEVMODE));
+            if (!EnumDisplaySettingsW(null, -1, ref dm)) return null;
+            if (dm.dmPelsWidth <= 0 || dm.dmPelsHeight <= 0) return null;
+            return new int[] { dm.dmPelsWidth, dm.dmPelsHeight };
+        } catch { return null; }
+    }
+}
+"@
+$null = [DshOvDpi]::Apply()
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 Add-Type -TypeDefinition @"
@@ -60,6 +128,34 @@ $vw = [System.Windows.SystemParameters]::VirtualScreenWidth
 $vh = [System.Windows.SystemParameters]::VirtualScreenHeight
 $unit = [Math]::Min($vw / 1920.0, $vh / 1080.0)
 if ($unit -lt 0.75) { $unit = 0.75 }
+
+# This window is laid out in logical units and Windows scales it, which is why the
+# caption looks right on a 150% display - but GetCursorPos still answers in *physical*
+# pixels. The halo is the one thing placed by that answer, so it needs the ratio back.
+# SetProcessDpiAwarenessContext above is a no-op under powershell.exe (its manifest
+# settles awareness before the script starts), so measure the ratio instead: the video
+# mode is physical, the WPF virtual screen is logical, and the quotient is the scale.
+$dpiScale = 1.0
+$physW = 0
+$physH = 0
+$physSource = 'none'
+try {
+    $mode = [DshOvDpi]::Primary()
+    if ($null -ne $mode -and $mode.Count -ge 2) { $physW = [int] $mode[0]; $physH = [int] $mode[1]; $physSource = 'EnumDisplaySettings' }
+} catch { }
+if ($physW -le 0) {
+    try {
+        $vc = Get-CimInstance Win32_VideoController -ErrorAction Stop |
+            Where-Object { $_.CurrentHorizontalResolution -gt 0 } |
+            Select-Object -First 1
+        if ($null -ne $vc) { $physW = [int] $vc.CurrentHorizontalResolution; $physH = [int] $vc.CurrentVerticalResolution; $physSource = 'WMI' }
+    } catch { }
+}
+if ($physW -gt 0 -and $vw -gt 0) {
+    $ratio = [double] $physW / [double] $vw
+    if ($ratio -ge 1.05 -and $ratio -le 4) { $dpiScale = [Math]::Round($ratio, 4) }
+}
+Log ("screen logical " + $vw + "x" + $vh + ", physical " + $physW + "x" + $physH + " (" + $physSource + "), scale " + $dpiScale)
 
 $coreThickness = [Math]::Max(6, [Math]::Round(8 * $unit))
 $glowThickness = [Math]::Max(18, [Math]::Round(36 * $unit))
@@ -214,11 +310,14 @@ function Update-Halo {
         if ($ok) {
             $h = $global:DshOvHaloWin
             if ($null -eq $h) { if (-not $script:haloLogged) { $script:haloLogged = $true; Log 'halo missing' }; return }
-            $h.Left = $p.X - ($global:DshOvSpotD / 2)
-            $h.Top = $p.Y - ($global:DshOvSpotD / 2)
+            # Cursor pixels are physical; this window's coordinates are logical.
+            $lx = $p.X / $dpiScale
+            $ly = $p.Y / $dpiScale
+            $h.Left = $lx - ($global:DshOvSpotD / 2)
+            $h.Top = $ly - ($global:DshOvSpotD / 2)
             $script:haloMoves = [int] $script:haloMoves + 1
             if ($script:haloMoves -le 3 -or ($script:haloMoves % 40) -eq 0) {
-                Log ("halo move " + $script:haloMoves + " -> " + $p.X + "," + $p.Y + " margin=" + $h.Margin.Left + "," + $h.Margin.Top)
+                Log ("halo move " + $script:haloMoves + " -> " + $p.X + "," + $p.Y + " at " + [int]$lx + "," + [int]$ly + " margin=" + $h.Margin.Left + "," + $h.Margin.Top)
             }
         }
     } catch {
@@ -259,7 +358,7 @@ function Update-State {
         # start of every action with a truncating write, and a Test-Path that lands in
         # that window reads false - hiding on it produced a flash per action. Waiting
         # two more ticks absorbs the write and still hides promptly (the host's own
-        # linger is two seconds).
+        # linger is `takeoverLingerMs`, eight seconds by default).
         $global:DshOvMissTicks++
         if ($global:DshOvMissTicks -lt 3) { return }
         $window.Hide()

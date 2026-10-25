@@ -173,6 +173,12 @@ dsh plugin --profile <你的profile> add "file:E:\path\to\dsh-pilot"
 
 ### 最近改动
 
+**0.6.5** —— 接管提示终于看得见：像素对了，停留时间也能调。
+
+- **浮层没声明 DPI 感知**，150% 缩放下它以为屏幕是 1707×1067（实际 2560×1600）：顶部文字被放大半倍，跟随鼠标的光环画到别处去了。现在在加载 WPF **之前**声明 per-monitor v2，按真实像素排版，光环落在指针上。
+- **隐藏延迟从写死的 2 秒变成配置项** `takeoverLingerMs`，默认 **8 秒**：单步动作也来得及看清是谁在操作，Esc 仍然随时能取消。
+- 浮层脚本里“宿主两秒后隐藏”的注释同步改成引用这个配置项。
+
 **0.6.4** —— 接管提示改成按回合显示。
 
 - **以前每个动作开关一次，画图这种连续操作就是一路闪。** 现在一个回合只显示一次，**最后一次动作后 2 秒**才隐藏；新动作会取消这个隐藏。
@@ -484,6 +490,12 @@ and what `dsh plugin add` checks before it installs anything. Requirements:
 (`deepseek-flash` does).
 
 ### Recent changes
+
+**0.6.5** — the takeover prompt is finally visible: right pixels, and a linger you can see.
+
+- **The overlay declared no DPI awareness**, so at 150% it laid itself out for a 1707×1067 screen instead of 2560×1600: the caption came out half again too large and the cursor halo was drawn away from the pointer. It now declares per-monitor v2 before WPF loads and lays out in real pixels, so the halo sits on the pointer.
+- **The hide delay is a setting now** (`takeoverLingerMs`, default **8 s**) instead of a hard-coded two seconds: a single action is long enough to read, and Esc still cancels at any time.
+- The comment in the overlay script about the host's two-second linger now names the setting.
 
 **0.6.4** — the takeover prompt is held per round, not per action.
 
