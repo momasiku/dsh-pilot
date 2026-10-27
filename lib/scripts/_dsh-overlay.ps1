@@ -1,4 +1,4 @@
-
+﻿
 # pilot / _dsh-overlay.ps1 - the visible part of a takeover.
 #
 # Ring around every monitor, a caption naming the operator, and a halo that follows
@@ -14,6 +14,23 @@ param(
     [Parameter(Mandatory = $true)][string] $StateDir
 )
 $ErrorActionPreference = 'Stop'
+
+# One overlay per state directory, checked BEFORE the C# compile and the WPF load.
+# Those cost 1.5-3 s on a busy machine, and a duplicate copy that pays for them before
+# discovering it is a duplicate shows up as "two overlays polling" for seconds.
+$mutexName = 'Local\DshOverlay_' + ($StateDir -replace '[^A-Za-z0-9]', '_')
+$global:DshOvMutex = New-Object System.Threading.Mutex($false, $mutexName)
+if (-not $global:DshOvMutex.WaitOne(0)) {
+    try {
+        if (Test-Path -LiteralPath $StateDir) {
+            [System.IO.File]::AppendAllText((Join-Path $StateDir 'status.txt'),
+                ((Get-Date).ToString('HH:mm:ss.fff') + ' another overlay owns this state dir; exiting' + [Environment]::NewLine))
+        }
+    } catch { }
+    exit 0
+}
+
+
 
 # Declare per-monitor v2 DPI awareness, and measure the scale anyway.
 #
@@ -103,6 +120,8 @@ public class DshOv {
 "@
 
 $showFile = Join-Path $StateDir 'show.txt'
+$muteFile = Join-Path $StateDir 'mute.txt'
+$mutedFile = Join-Path $StateDir 'muted.txt'
 $quitFile = Join-Path $StateDir 'quit.txt'
 $hitFile  = Join-Path $StateDir 'esc.txt'
 $logFile  = Join-Path $StateDir 'status.txt'
@@ -111,16 +130,24 @@ function Log([string] $m) {
     try { [System.IO.File]::AppendAllText($logFile, ((Get-Date).ToString('HH:mm:ss.fff') + ' ' + $m + [Environment]::NewLine)) } catch { }
 }
 
-# One overlay per state directory. A host restart leaves the previous copy running
-# (it is unref'd and has no parent watch), and two copies draw the same caption on
-# the same desktop - they flash over each other. A named mutex is the cheapest way
-# to make the second one exit instead.
-$mutexName = 'Local\DshOverlay_' + ($StateDir -replace '[^A-Za-z0-9]', '_')
-$global:DshOvMutex = New-Object System.Threading.Mutex($false, $mutexName)
-if (-not $global:DshOvMutex.WaitOne(0)) {
-    Log 'another overlay owns this state dir; exiting'
-    exit 0
-}
+
+# The mutex name is built from the StateDir *string*, so the same directory reached as
+# C:\Users\Administrator\... and as C:\Users\ADMINI~1\... yields two mutexes and two
+# overlays. A pid file inside the directory closes that hole; the mutex stays because it
+# also covers a second copy that starts before this one has written the file.
+$instFile = Join-Path $StateDir 'instance.txt'
+try {
+    $prev = 0
+    if (Test-Path -LiteralPath $instFile) { $prev = [int](([System.IO.File]::ReadAllText($instFile)).Trim()) }
+    if ($prev -gt 0 -and $prev -ne $PID) {
+        $prevProc = Get-Process -Id $prev -ErrorAction SilentlyContinue
+        if ($null -ne $prevProc -and $prevProc.ProcessName -match 'powershell') {
+            Log ("another overlay (pid " + $prev + ") owns this state dir; exiting")
+            exit 0
+        }
+    }
+    [System.IO.File]::WriteAllText($instFile, [string] $PID)
+} catch { }
 
 $global:DshOvVsL = [System.Windows.SystemParameters]::VirtualScreenLeft
 $global:DshOvVsT = [System.Windows.SystemParameters]::VirtualScreenTop
@@ -162,7 +189,7 @@ $glowThickness = [Math]::Max(18, [Math]::Round(36 * $unit))
 $blurRadius    = [Math]::Max(18, [Math]::Round(34 * $unit))
 $radius        = [Math]::Round(22 * $unit)
 $fontSize      = [Math]::Max(30, [Math]::Round(40 * $unit))
-$spotD         = [Math]::Round(120 * $unit)
+$spotD         = [Math]::Round(168 * $unit)
 $global:DshOvSpotD = $spotD
 $haloD         = [Math]::Round(58 * $unit)
 
@@ -184,6 +211,55 @@ $window.Width = $vw
 $window.Height = $vh
 
 $root = New-Object System.Windows.Controls.Grid
+
+# ---- border glow ---------------------------------------------------------
+# One ramp, no outline. This is the whole trick from Windows-MCP:
+#
+#   alpha = 240 * (1 - depth/extent) ** 1.4
+#
+# Brightest exactly at the screen edge and gone by `extent` px inward. The 1.4
+# exponent is what makes it read as light falling on the screen rather than as a
+# painted band, and there is deliberately no bright hairline at the edge - a line
+# would turn the glow into a frame.
+# ---- border glow ---------------------------------------------------------
+# Four edge strips, each painted with one LinearGradientBrush running from the colour
+# at the screen edge to fully transparent, borderDepth px inward. The first cut used
+# sixteen nested rectangles to trace the same ramp and cost about 400 ms of first
+# paint on a layered window; four gradient fills cost almost nothing.
+#
+# The stops are alpha 110 * (1 - d/depth) ** 1.8 sampled four times, which is
+# indistinguishable from the per-pixel curve at these depths.
+$borderDepth = [Math]::Round(56 * $unit)
+$ringGrid = New-Object System.Windows.Controls.Grid
+$global:DshOvRing = $ringGrid
+
+function New-EdgeBrush([double] $ax, [double] $ay, [double] $bx, [double] $by) {
+    $br = New-Object System.Windows.Media.LinearGradientBrush
+    $br.StartPoint = New-Object System.Windows.Point($ax, $ay)
+    $br.EndPoint = New-Object System.Windows.Point($bx, $by)
+    foreach ($pair in @(@(0.00, 110), @(0.35, 62), @(0.70, 20), @(1.00, 0))) {
+        $gs = New-Object System.Windows.Media.GradientStop ([System.Windows.Media.Color]::FromArgb([int] $pair[1], 205, 242, 255)), ([double] $pair[0])
+        $br.GradientStops.Add($gs) | Out-Null
+    }
+    return $br
+}
+
+$edgeSpecs = @(
+    @('Stretch', 'Top',    (New-EdgeBrush 0 0 0 1)),
+    @('Stretch', 'Bottom', (New-EdgeBrush 0 1 0 0)),
+    @('Left',    'Stretch',(New-EdgeBrush 0 0 1 0)),
+    @('Right',   'Stretch',(New-EdgeBrush 1 0 0 0))
+)
+foreach ($spec in $edgeSpecs) {
+    $strip = New-Object System.Windows.Shapes.Rectangle
+    $strip.Fill = $spec[2]
+    $strip.HorizontalAlignment = $spec[0]
+    $strip.VerticalAlignment = $spec[1]
+    if ($spec[0] -eq 'Stretch') { $strip.Height = [Math]::Round($borderDepth) } else { $strip.Width = [Math]::Round($borderDepth) }
+    $ringGrid.Children.Add($strip) | Out-Null
+}
+$root.Children.Add($ringGrid) | Out-Null
+
 
 # ---- halo that follows the pointer ---------------------------------------
 # Its own window, not a child of the ring window: a child Grid with runtime
@@ -208,23 +284,19 @@ $spot = New-Object System.Windows.Shapes.Ellipse
 $spot.Width = $spotD
 $spot.Height = $spotD
 $spotFill = New-Object System.Windows.Media.RadialGradientBrush
-$stop1 = New-Object System.Windows.Media.GradientStop ([System.Windows.Media.Color]::FromArgb(155, 70, 150, 255)), 0.0
-$stop2 = New-Object System.Windows.Media.GradientStop ([System.Windows.Media.Color]::FromArgb(70, 70, 150, 255)), 0.55
-$stop3 = New-Object System.Windows.Media.GradientStop ([System.Windows.Media.Color]::FromArgb(0, 70, 150, 255)), 1.0
-$spotFill.GradientStops.Add($stop1) | Out-Null
-$spotFill.GradientStops.Add($stop2) | Out-Null
-$spotFill.GradientStops.Add($stop3) | Out-Null
+# Windows-MCP's aura, sampled: a gaussian falloff with the middle punched out so
+# the real arrow stays legible, and no drawn contour at all. A ring reads as a
+# target reticle; a falloff reads as light.
+$auraStops = @(
+    @(0.00, 60),  @(0.07, 140), @(0.17, 245), @(0.34, 190),
+    @(0.56, 90),  @(0.80, 26),  @(1.00, 0)
+)
+foreach ($pair in $auraStops) {
+    $gs = New-Object System.Windows.Media.GradientStop ([System.Windows.Media.Color]::FromArgb([int] $pair[1], 185, 232, 255)), ([double] $pair[0])
+    $spotFill.GradientStops.Add($gs) | Out-Null
+}
 $spot.Fill = $spotFill
 $halo.Children.Add($spot) | Out-Null
-
-$haloRing = New-Object System.Windows.Shapes.Ellipse
-$haloRing.Width = $haloD
-$haloRing.Height = $haloD
-$haloRing.Stroke = SB 235 236 246 255
-$haloRing.StrokeThickness = [Math]::Max(2, [Math]::Round(3 * $unit))
-$haloRing.HorizontalAlignment = 'Center'
-$haloRing.VerticalAlignment = 'Center'
-$halo.Children.Add($haloRing) | Out-Null
 
 $haloWin.Content = $halo
 $haloWin.Add_SourceInitialized({
@@ -236,29 +308,114 @@ $haloWin.Add_SourceInitialized({
 $global:DshOvHaloWin = $haloWin
 
 
-# ---- caption -------------------------------------------------------------
-$sans = New-Object System.Windows.Media.FontFamily('Microsoft YaHei UI, Microsoft YaHei, Segoe UI Variable Display, Segoe UI')
+# ---- caption panel -------------------------------------------------------
+# A dark plate behind the words, with the accent colour bleeding out of its edge
+# rather than a black drop shadow. Windows-MCP does the same thing and it is what
+# makes a notice look like it belongs ON the screen instead of floating over it.
+#
+# The two Chinese runs are built from UTF-8 bytes on purpose: this file lost its BOM
+# once and PowerShell 5.1 then read the literal as GBK, turning the caption into
+# mojibake. Bytes cannot be mis-decoded.
+# Windows-MCP sets its notice in Segoe UI Semibold with a Segoe UI hint. Same stack,
+# one weight down from Bold - Semibold is the weight Windows uses for its own captions,
+# and it is what stops the line from looking stamped on.
+$sans = New-Object System.Windows.Media.FontFamily('Segoe UI Variable Display, Segoe UI, Microsoft YaHei UI, Microsoft YaHei')
+$capLine1 = [byte[]]@(0x44,0x53,0x48,0x20,0xE6,0xAD,0xA3,0xE5,0x9C,0xA8,0xE6,0x93,0x8D,0xE4,0xBD,0x9C,0xE4,0xBD,0xA0,0xE7,0x9A,0x84,0xE7,0x94,0xB5,0xE8,0x84,0x91)
+$capLine2 = [byte[]]@(0xE5,0x8F,0x96,0xE6,0xB6,0x88)
+
+$panel = New-Object System.Windows.Controls.Border
+$panel.CornerRadius = New-Object System.Windows.CornerRadius ([Math]::Round(20 * $unit))
+# A translucent blue, not a black plate: the desktop has to show through it or the
+# panel reads as a hole punched in the screen.
+$panelBg = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromArgb(140, 18, 74, 148))
+$panel.Background = $panelBg
+$panel.Padding = New-Object System.Windows.Thickness ([Math]::Round(26 * $unit)), ([Math]::Round(12 * $unit)), ([Math]::Round(26 * $unit)), ([Math]::Round(14 * $unit))
+$panel.HorizontalAlignment = 'Center'
+$panel.VerticalAlignment = 'Top'
+$panel.Margin = New-Object System.Windows.Thickness 0, ([Math]::Round(26 * $unit)), 0, 0
+
+# The glow is the panel's own shadow, pulled straight out (ShadowDepth 0) and
+# tinted to the accent, so the plate dissolves into the screen edge of the frame.
+$panelGlow = New-Object System.Windows.Media.Effects.DropShadowEffect
+$panelGlow.Color = [System.Windows.Media.Color]::FromRgb(120, 200, 255)
+$panelGlow.ShadowDepth = 0
+$panelGlow.BlurRadius = [Math]::Round(22 * $unit)
+$panelGlow.Opacity = 0.55
+$panel.Effect = $panelGlow
+$global:DshOvPanelGlow = $panelGlow
+
+# The plate's edge is a gradient that rotates, so a highlight travels around the
+# rounded border. Two passes of light - one bright core, one dim wake - read as a
+# sheen rather than as a spinner.
+$edgeBrush = New-Object System.Windows.Media.LinearGradientBrush
+$edgeBrush.StartPoint = New-Object System.Windows.Point(0, 0)
+$edgeBrush.EndPoint = New-Object System.Windows.Point(1, 1)
+foreach ($pair in @(@(0.00, 30), @(0.36, 120), @(0.50, 255), @(0.64, 120), @(1.00, 30))) {
+    $gs = New-Object System.Windows.Media.GradientStop ([System.Windows.Media.Color]::FromArgb([int] $pair[1], 236, 249, 255)), ([double] $pair[0])
+    $edgeBrush.GradientStops.Add($gs) | Out-Null
+}
+$edgeSpin = New-Object System.Windows.Media.RotateTransform
+$edgeSpin.CenterX = 0.5
+$edgeSpin.CenterY = 0.5
+$edgeSpin.Angle = 0
+$edgeBrush.RelativeTransform = $edgeSpin
+$global:DshOvEdgeSpin = $edgeSpin
+$panel.BorderBrush = $edgeBrush
+$panel.BorderThickness = New-Object System.Windows.Thickness 2.6
+
+# ---- the words on the plate ----------------------------------------------
+$row = New-Object System.Windows.Controls.Grid
+$row.VerticalAlignment = 'Center'
+foreach ($w in @('Auto', 'Auto', 'Auto')) {
+    $col = New-Object System.Windows.Controls.ColumnDefinition
+    $col.Width = New-Object System.Windows.GridLength(0, [System.Windows.GridUnitType]::$w)
+    $row.ColumnDefinitions.Add($col) | Out-Null
+}
+
 $label = New-Object System.Windows.Controls.TextBlock
-# Built from UTF-8 bytes on purpose: this file lost its BOM once and PowerShell
-# 5.1 then read the literal as GBK, turning the caption into mojibake. Bytes cannot
-# be mis-decoded.
-$captionBytes = [byte[]]@(0x44,0x53,0x48,0x20,0xE6,0xAD,0xA3,0xE5,0x9C,0xA8,0xE6,0x93,0x8D,0xE4,0xBD,0x9C,0xE4,0xBD,0xA0,0xE7,0x9A,0x84,0xE7,0x94,0xB5,0xE8,0x84,0x91,0x20,0x20,0x20,0xE6,0x8C,0x89,0x20,0x45,0x73,0x63,0x20,0xE5,0x8F,0x96,0xE6,0xB6,0x88)
-$label.Text = [System.Text.Encoding]::UTF8.GetString($captionBytes)
+$label.Text = [System.Text.Encoding]::UTF8.GetString($capLine1)
 $label.FontSize = $fontSize
 $label.FontFamily = $sans
-$label.FontWeight = [System.Windows.FontWeights]::Bold
+$label.FontWeight = [System.Windows.FontWeights]::SemiBold
 $label.Foreground = [System.Windows.Media.Brushes]::White
-$label.Opacity = 0.9
-$label.HorizontalAlignment = 'Center'
-$label.VerticalAlignment = 'Top'
-$label.Margin = [System.Windows.Thickness]::new(0, [Math]::Round(34 * $unit), 0, 0)
-$capShadow = New-Object System.Windows.Media.Effects.DropShadowEffect
-$capShadow.Color = [System.Windows.Media.Colors]::Black
-$capShadow.BlurRadius = [Math]::Round(26 * $unit)
-$capShadow.ShadowDepth = 3
-$capShadow.Opacity = 0.9
-$label.Effect = $capShadow
-$root.Children.Add($label) | Out-Null
+$label.VerticalAlignment = 'Center'
+[System.Windows.Controls.Grid]::SetColumn($label, 0)
+$row.Children.Add($label) | Out-Null
+
+$keyWrap = New-Object System.Windows.Controls.Border
+$keyWrap.CornerRadius = New-Object System.Windows.CornerRadius ([Math]::Round(6 * $unit))
+$keyWrap.Background = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromArgb(170, 8, 34, 76))
+$keyWrap.BorderBrush = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromArgb(130, 255, 255, 255))
+$keyWrap.BorderThickness = New-Object System.Windows.Thickness 1
+$keyWrap.Padding = New-Object System.Windows.Thickness ([Math]::Round(9 * $unit)), ([Math]::Round(1 * $unit)), ([Math]::Round(9 * $unit)), ([Math]::Round(2 * $unit))
+$keyWrap.Margin = New-Object System.Windows.Thickness ([Math]::Round(16 * $unit)), 0, ([Math]::Round(10 * $unit)), 0
+$keyWrap.VerticalAlignment = 'Center'
+[System.Windows.Controls.Grid]::SetColumn($keyWrap, 1)
+$keyText = New-Object System.Windows.Controls.TextBlock
+$keyText.Text = 'Esc'
+$keyText.FontSize = [Math]::Round($fontSize * 0.82)
+$keyText.FontFamily = $sans
+$keyText.FontWeight = [System.Windows.FontWeights]::SemiBold
+$keyText.Foreground = [System.Windows.Media.Brushes]::White
+$keyWrap.Child = $keyText
+$row.Children.Add($keyWrap) | Out-Null
+
+$label2 = New-Object System.Windows.Controls.TextBlock
+$label2.Text = [System.Text.Encoding]::UTF8.GetString($capLine2)
+$label2.FontSize = $fontSize
+$label2.FontFamily = $sans
+$label2.FontWeight = [System.Windows.FontWeights]::SemiBold
+$label2.Foreground = [System.Windows.Media.Brushes]::White
+$label2.Opacity = 0.82
+$label2.VerticalAlignment = 'Center'
+[System.Windows.Controls.Grid]::SetColumn($label2, 2)
+$row.Children.Add($label2) | Out-Null
+
+$panel.Child = $row
+$global:DshOvPanel = $panel
+$root.Children.Add($panel) | Out-Null
+$global:DshOvPanel = $panel
+$global:DshOvRow = $row
 
 $window.Content = $root
 
@@ -289,6 +446,12 @@ function Stop-Takeover {
 
 $script:haloErrors = 0
 function Update-Halo {
+    # Removed on purpose. A window that has to poll GetCursorPos and be moved every
+    # 16 ms trails the real pointer by one or two frames no matter how fast the loop
+    # runs, and a lagging second cursor is what made the takeover feel heavy. The
+    # pointer itself is enlarged through the Windows setting instead.
+    return
+
     # No latching. A failed GetCursorPos (the desktop can be mid-switch between a
     # locked and an active session) used to disable the halo for the rest of the
     # process - which is exactly "it worked at first and then stopped".
@@ -329,6 +492,19 @@ function Update-Halo {
 }
 
 function Update-State {
+    # A capture must not contain the overlay. The host drops mute.txt, waits for
+    # muted.txt (so it cannot shoot a frame mid-hide), takes the picture, then removes
+    # both files - the same handshake Windows-MCP uses.
+    if (Test-Path -LiteralPath $muteFile) {
+        if ($window.IsVisible) {
+            $window.Hide()
+            if ($null -ne $global:DshOvHaloWin -and $global:DshOvHaloWin.IsVisible) { $global:DshOvHaloWin.Hide() }
+            Log 'muted for capture'
+        }
+        if (-not (Test-Path -LiteralPath $mutedFile)) { Set-Content -LiteralPath $mutedFile -Value '1' -Encoding ASCII }
+        return
+    }
+    if (Test-Path -LiteralPath $mutedFile) { Remove-Item -LiteralPath $mutedFile -Force -ErrorAction SilentlyContinue }
     $show = Test-Path -LiteralPath $showFile
     if ($show) {
         $raw = ''
@@ -337,6 +513,23 @@ function Update-State {
     }
     if ($show) {
         $global:DshOvMissTicks = 0
+        # A remote session renegotiates its resolution while the overlay is already up,
+        # which used to leave a 1080p window on a 1024p desktop and push the caption past
+        # the right edge. Checking once a second is enough for that and costs nothing on a
+        # machine whose resolution never moves - a local desktop is settled before show.
+        $global:DshOvRefit = $global:DshOvRefit + 1
+        if ($window.IsVisible -and $global:DshOvRefit -ge 60) {
+            $global:DshOvRefit = 0
+            $vwNow = [System.Windows.SystemParameters]::VirtualScreenWidth
+            $vhNow = [System.Windows.SystemParameters]::VirtualScreenHeight
+            if ($window.Width -ne $vwNow -or $window.Height -ne $vhNow) {
+                $window.Width = $vwNow
+                $window.Height = $vhNow
+                $window.Left = [System.Windows.SystemParameters]::VirtualScreenLeft
+                $window.Top = [System.Windows.SystemParameters]::VirtualScreenTop
+                Log ("refit " + $vwNow + "x" + $vhNow)
+            }
+        }
         if (-not $window.IsVisible) {
             # The desktop can change size between shows (a reconnect, a display mode
             # switch); re-fit rather than draw a 1080p ring on a 1600p desktop.
@@ -349,11 +542,35 @@ function Update-State {
                 $window.Height = $h
             }
             $window.Show(); Enable-Hotkey
-            if (-not $global:DshOvHaloWin.IsVisible) { $global:DshOvHaloWin.Show() }
+            $global:DshOvBreath = [Environment]::TickCount
+            $global:DshOvRefit = 0
+            # The halo is deliberately never shown (see Update-Halo).
             Log ("shown " + $w + "x" + $h)
+            Log ("panel " + [Math]::Round($global:DshOvPanel.ActualWidth) + "x" + [Math]::Round($global:DshOvPanel.ActualHeight) + "  row " + [Math]::Round($global:DshOvRow.ActualWidth))
         }
+        # A three-second breath, the curve Windows-MCP uses, but with a wider swing:
+        # at 0.42 the border barely changed because its peak alpha is already only 150.
+        # Down to 0.12 the dark phase nearly disappears, which is what makes the pulse
+        # readable at a glance.
+        #
+        # It is re-applied every fourth tick, not every tick: changing the opacity of a
+        # Grid holding 56 full-screen rectangles forces a re-composite, and doing that at
+        # 30 Hz pushed the tick interval from 33 ms to 47 ms - which showed up as the
+        # cursor halo lagging behind the pointer. A 3 s curve sampled at 7.5 Hz is smooth.
+        $script:breathTick = $script:breathTick + 1
+        if (($script:breathTick % 8) -eq 1) {
+            if ($global:DshOvBreath -eq 0) { $global:DshOvBreath = [Environment]::TickCount }
+            $secs = ([Environment]::TickCount - $global:DshOvBreath) / 1000.0
+            $breath = (1 + [Math]::Cos(2 * [Math]::PI * $secs / 3.0)) / 2
+            # The plate's own light breathes; the screen edge stays steady, because a
+            # pulsing frame around the whole display reads as a warning light, not as
+            # something considered.
+            if ($null -ne $global:DshOvPanelGlow) { $global:DshOvPanelGlow.Opacity = 0.30 + 0.45 * $breath }
+        }
+        if ($null -ne $global:DshOvEdgeSpin) { $global:DshOvEdgeSpin.Angle = ($global:DshOvEdgeSpin.Angle + 2.6) % 360 }
         Update-Halo
     } elseif ($window.IsVisible) {
+        $global:DshOvBreath = 0
         # One failed stat is not "the host hid me". The host rewrites this file at the
         # start of every action with a truncating write, and a Test-Path that lands in
         # that window reads false - hiding on it produced a flash per action. Waiting
@@ -396,9 +613,11 @@ $global:DshOvMissTicks = 0
 $global:DshOvIdleTicks = 0
 
 $timer = New-Object System.Windows.Threading.DispatcherTimer
-$timer.Interval = [TimeSpan]::FromMilliseconds(33)
+$timer.Interval = [TimeSpan]::FromMilliseconds(16)
 $timer.Add_Tick({
-    Update-State
+    # A throw here used to be swallowed by the dispatcher: the overlay stayed visible
+    # and simply stopped updating, which looks exactly like a frozen halo.
+    try { Update-State } catch { if (-not $script:tickErrLogged) { $script:tickErrLogged = $true; Log ('TICK ERROR: ' + $_.Exception.Message + ' @ ' + $_.InvocationInfo.ScriptLineNumber) } }
     $global:DshOvTicks++
     if ($window.IsVisible) { $global:DshOvIdleTicks = 0 } else { $global:DshOvIdleTicks++ }
     # 33 ms * 18000 = ~10 minutes hidden before the process gives the memory back.
