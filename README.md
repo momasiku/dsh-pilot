@@ -173,6 +173,14 @@ dsh plugin --profile <你的profile> add "file:E:\path\to\dsh-pilot"
 
 ### 最近改动
 
+**未发布** —— 截图改成 opt-in：默认不再附图。
+
+- **一次附图的代价是每步都要付**：一张 2560×1600 的帧是这条结果里最大的一块，而点击、按键、聚焦、读控件树这些动作，看返回文本就读得出来，图往往用不上。默认附图等于替调用方预先买了它不需要的东西，几步下来就把上下文挤满。
+- **`capture` 现在只在显式要求时取图**：`desktop_control` 只有 `capture: true` 才截一帧；`desktop_sequence` 只有 `capture: "end"` 才截末帧，`"none"` 与不传都完全不截。
+- **顺带省掉 settle**：不截图就不必等屏幕重绘，一次动作的耗时从约 814 ms 降到约 12 ms。
+- 需要看图时照旧传参数；坐标精度靠 `rulers: true`（默认开）和控件树的 `rect`，不靠截图。
+- 注意这是行为变更：之前依赖"默认有图"的调用方需要显式传 `capture: true`。
+
 **0.7.2** —— 让兼容性检查跟上宿主的 0.2.2 预发布。
 
 - **compat 工作流今天变红**：它装 `@deepseek-ai/dsh-*@next`，而 `next` 现在指向 **0.2.2-rc.1**；我们的 peer 区间只列了 0.2.0 和 0.2.1 的预发布，npm 的 semver 因此判为不匹配（`dsh gate=pass, pnpm=fail`）。
@@ -259,7 +267,7 @@ npm 上的包名带 scope，是因为 `dsh-pilot` 这个名字在 npm 上属于�
 - 先 `desktop_control { action: "windows" }` 看清有哪些窗口、哪个在前台，再动手。
 - 多步任务优先用 `desktop_sequence`：把"聚焦 → 点击 → 输入 → 回车"写成一次调用。
 - 打字支持多行与中文（走剪贴板一次粘贴，之后恢复剪贴板）。
-- 想更省 token：`capture: "none"` 不附图，或依赖"未变化不重发"；想看得更清：`rulers: true`（默认开）。
+- 默认不附图：`capture` 是 opt-in，需要看画面时才传 `capture: true`，批量任务传 `capture: "end"`；`rulers: true`（默认开）让坐标读得出来。
 - 常用设置（`captureRetention`、`settleMs`、`stepSettleMs`、`maxSequenceSteps`、`useWorker`、`rulers`）写在配置行里，见上面的 Settings 一节。
 
 ## 常见问题
@@ -696,7 +704,7 @@ coordinate contract for that frame.
 | `button` | string | `left` (default), `right`, `middle` |
 | `title` | string | window title or process substring; required by `focus`, filters `windows` |
 | `hwnd` | string | lock input to one window handle (`0x1094C` or decimal) |
-| `capture` | boolean | capture a fresh frame after acting (default `true`) |
+| `capture` | boolean | capture a fresh frame after acting (default `false`: a frame is opt-in) |
 | `settleMs` | integer | wait before that capture so the screen can repaint (default 750) |
 | `forceImage` | boolean | attach the frame even when it repeats the previous frame of the session |
 | `target` | integer | pointer actions: click the control at this index from a `controls` listing instead of `x`/`y` |
@@ -724,7 +732,7 @@ for when a tree exists and when a frame is still the right tool.
 | `risk` | string | `low` (default) / `medium` / `high` — the risk you declare for the whole batch |
 | `confirm` | boolean | required for a medium/high batch; without it the tool refuses before touching the desktop |
 | `dryRun` | boolean | validate the batch and list the plan without executing anything |
-| `capture` | string | `end` (default) captures one frame after the last step, `none` skips it |
+| `capture` | string | `none` (default) skips the end frame, `end` captures one after the last step |
 | `target` | string | `window` (default: the window that was foreground during the batch), `screen`, or `all` |
 | `window` | string | frame this window instead (title/process substring), overriding `target` |
 | `region` | string | crop the end frame as `x,y,width,height` in physical pixels |
@@ -744,7 +752,7 @@ one call still tells the model exactly where a batch went wrong.
       config:
         captureRetention: 30   # frames kept under .dsh-pilot/
         timeoutMs: 20000       # per-call kill deadline for a helper
-        settleMs: 750          # default delay before the automatic capture
+        settleMs: 750          # default delay before a capture, when one is taken
         stepSettleMs: 120      # per-step delay inside a desktop_sequence
         maxSequenceSteps: 24   # hard cap on the steps of one batch
         alwaysSaveFile: true   # keep the PNG even when no image block is attached
