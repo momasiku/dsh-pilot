@@ -154,26 +154,47 @@ check('a sequence step keeps its hwnd', batch?.error === undefined && batch.exec
 
 // ---- 4. killing the worker mid-request -------------------------------------
 {
-	await control.execute({ action: 'move', x: 400, y: 400, capture: false }, exec).catch(() => undefined);
-	// Find the worker BEFORE the batch starts: launching PowerShell to hunt for it takes
-	// about a second on this host, which is longer than the batch itself, so the kill
-	// used to land after the action had already answered.
-	const workerPid = Number(ps("Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | Where-Object { $_.CommandLine -like '*desktop-worker*' } | Select-Object -First 1 -ExpandProperty ProcessId"));
-	check('the warm worker is running', Number.isInteger(workerPid) && workerPid > 0, 'pid=' + workerPid);
-	const pending = sequence.execute({ steps: [
-		{ action: 'drag', x: 300, y: 300, toX: 900, toY: 700 },
-		{ action: 'drag', x: 900, y: 700, toX: 300, toY: 300 }
-	], capture: 'none' }, exec)
-		.then((value) => ({ ok: true, value }), (error) => ({ ok: false, error: error.message }));
-	await sleep(250);
-	let killed = 'none';
-	try { process.kill(workerPid); killed = String(workerPid); } catch (error) { killed = 'kill failed: ' + error.message; }
-	const outcome = await Promise.race([pending, sleep(8000).then(() => ({ ok: false, error: 'HUNG' }))]);
-	// A resolved batch is acceptable only if it reports the step it lost; what must
-	// never happen is the call hanging on a worker that is already gone.
-	const reported = outcome.ok === true ? (outcome.value?.failed ?? 0) > 0 : true;
-	check('a dead worker rejects the pending call instead of hanging', outcome.error !== 'HUNG' && reported, 'killed=[' + killed.replace(/\s+/g, ',') + '] result=' + String(outcome.error ?? ('resolved failed=' + (outcome.value?.failed ?? '?'))).slice(0, 60));
-	check('no exception escaped the worker close handler', escaped === null, escaped === null ? 'none' : escaped.message);
+	// The worker has to be the one serving the batch, or the kill proves nothing.
+	// A cold first call takes ~3.5 s (spawn + Add-Type); a warm one is tens of ms.
+	async function warmWorkerServing() {
+		const t = Date.now();
+		await control.execute({ action: 'move', x: 420, y: 420, capture: false }, exec).catch(() => undefined);
+		return Date.now() - t;
+	}
+	async function workerPid() {
+		return Number(ps("Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | Where-Object { $_.CommandLine -like '*desktop-worker*' } | Select-Object -First 1 -ExpandProperty ProcessId"));
+	}
+
+	let outcome = null;
+	let killedPid = 0;
+	for (let attempt = 1; attempt <= 2 && outcome === null; attempt += 1) {
+		const warmMs = await warmWorkerServing();
+		const pid = await workerPid();
+		if (!Number.isInteger(pid) || pid <= 0) { check('the warm worker is running', false, 'no pid'); break; }
+		if (warmMs > 800) {
+			check('the warm worker is serving', false, 'a warm move took ' + warmMs + ' ms, so the batch would not use it');
+			break;
+		}
+		killedPid = pid;
+		const pending = sequence.execute({ steps: [
+			{ action: 'drag', x: 300, y: 300, toX: 900, toY: 700 },
+			{ action: 'drag', x: 900, y: 700, toX: 300, toY: 300 }
+		], capture: 'none' }, exec).then((value) => ({ ok: true, value }), (error) => ({ ok: false, error: error.message }));
+		await sleep(200);
+		try { process.kill(pid); } catch (error) { check('the worker could be killed', false, error.message); break; }
+		const settled = await Promise.race([pending, sleep(8000).then(() => ({ ok: false, error: 'HUNG' }))]);
+		if (settled.error === 'HUNG') { outcome = settled; break; }
+		// A resolved batch is acceptable only if it reports the step it lost. If the
+		// batch still succeeded, the pid we killed was stale - try once more.
+		const reported = settled.ok === true ? (settled.value?.failed ?? 0) > 0 : true;
+		if (reported || attempt === 2) outcome = settled;
+	}
+	if (outcome !== null) {
+		check('the warm worker is running', killedPid > 0, 'pid=' + killedPid);
+		const detail = outcome.ok === true ? 'resolved failed=' + (outcome.value?.failed ?? '?') : String(outcome.error).slice(0, 60);
+		check('a dead worker rejects the pending call instead of hanging', outcome.error !== 'HUNG' && (outcome.ok === false || (outcome.value?.failed ?? 0) > 0), 'killed=[' + killedPid + '] ' + detail);
+		check('no exception escaped the worker close handler', escaped === null, escaped === null ? 'none' : escaped.message);
+	}
 }
 
 try { process.kill(notepad.pid); } catch { /* already gone */ }
