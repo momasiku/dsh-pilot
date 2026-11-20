@@ -164,15 +164,32 @@ function Get-KeySequence([string] $spec) {
 
 function Invoke-TextPaste([string] $text) {
     Add-Type -AssemblyName System.Windows.Forms
-    $saved = $null
-    try { if ([System.Windows.Forms.Clipboard]::ContainsText()) { $saved = [System.Windows.Forms.Clipboard]::GetText() } } catch { $saved = $null }
-    try { [System.Windows.Forms.Clipboard]::SetText($text) } catch { Write-ActionError "could not place the text on the clipboard: $($_.Exception.Message)" }
-    Start-Sleep -Milliseconds 60
-    Assert-Alive
-    try { [DshInput]::SendKeysText('^v') } catch { Write-ActionError "the paste keystroke could not be delivered: $($_.Exception.Message)" }
-    Start-Sleep -Milliseconds 120
-    if ($null -ne $saved) {
-        try { [System.Windows.Forms.Clipboard]::SetText($saved) } catch { }
+    # Text first: SetText restores it exactly and is the path that is known to work.
+    # The data object is only the fallback for a clipboard that held no text at all (an
+    # image or a file list) - restoring a captured object does not survive every
+    # clipboard provider, and a failed restore must never end up clearing the clipboard.
+    $savedText = $null
+    $savedObject = $null
+    try { if ([System.Windows.Forms.Clipboard]::ContainsText()) { $savedText = [System.Windows.Forms.Clipboard]::GetText() } } catch { $savedText = $null }
+    if ($null -eq $savedText) {
+        try { $savedObject = [System.Windows.Forms.Clipboard]::GetDataObject() } catch { $savedObject = $null }
+    }
+    try {
+        try { [System.Windows.Forms.Clipboard]::SetText($text) } catch { Write-ActionError "could not place the text on the clipboard: $($_.Exception.Message)" }
+        Start-Sleep -Milliseconds 60
+        Assert-Alive
+        try { [DshInput]::SendKeysText('^v') } catch { Write-ActionError "the paste keystroke could not be delivered: $($_.Exception.Message)" }
+        Start-Sleep -Milliseconds 120
+    } finally {
+        # Every exit path restores: the normal one, a failed keystroke, and the Esc
+        # path where Assert-Alive throws between SetText and the restore. The restore
+        # used to sit after the keystroke with no finally, so cancelling a paste left
+        # the plugin's own text in the person's clipboard.
+        if ($null -ne $savedText) {
+            try { [System.Windows.Forms.Clipboard]::SetText($savedText) } catch { }
+        } elseif ($null -ne $savedObject) {
+            try { [System.Windows.Forms.Clipboard]::SetDataObject($savedObject, $true) } catch { }
+        }
     }
 }
 

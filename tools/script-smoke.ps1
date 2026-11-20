@@ -74,12 +74,20 @@ $start.UseShellExecute = $false
 $start.CreateNoWindow = $true
 $worker = [System.Diagnostics.Process]::Start($start)
 
+function Write-Frame([string] $text) {
+  # Raw ASCII bytes, not WriteLine: the StreamWriter behind StandardInput emits a BOM on
+  # its first write here, the worker decodes it in its own console encoding, and the BOM
+  # arrives as two junk characters that break the base64 decode of the first request.
+  $bytes = [System.Text.Encoding]::ASCII.GetBytes($text + "`n")
+  $worker.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
+  $worker.StandardInput.BaseStream.Flush()
+}
+
 function Send-Worker([hashtable] $payload, [int] $timeoutMs = 15000) {
   $json = $payload | ConvertTo-Json -Compress
   $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($json))
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
-  $worker.StandardInput.WriteLine($b64)
-  $worker.StandardInput.Flush()
+  Write-Frame $b64
   $task = $worker.StandardOutput.ReadLineAsync()
   if (-not $task.Wait($timeoutMs)) { throw "the worker did not answer within ${timeoutMs}ms" }
   $sw.Stop()
@@ -138,7 +146,7 @@ try {
   $probeAfter = Send-Worker @{ id = 'capafter'; kind = 'capture'; out = (Join-Path $work 'after.png'); screen = 'primary' }
   Check 'worker: survives a failed capture' ($probeAfter.value.ok -eq $true -and (Test-Path (Join-Path $work 'after.png'))) "took $($probeAfter.ms) ms"
 
-  $worker.StandardInput.WriteLine(([Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes('{"quit":true}'))))
+  Write-Frame ([Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes('{"quit":true}')))
   $worker.StandardInput.Flush()
   $exited = $worker.WaitForExit(5000)
   Check 'worker: quits on request' ($exited -eq $true) "exitCode=$(if ($exited) { $worker.ExitCode } else { 'still running' })"

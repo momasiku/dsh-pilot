@@ -173,6 +173,14 @@ dsh plugin --profile <你的profile> add "file:E:\path\to\dsh-pilot"
 
 ### 最近改动
 
+**0.7.3** —— 四处可靠性修复，另修一个 worker 的输入编码问题。
+
+- **`hwnd` 从来没被真正传下去**。README 一直在承诺它（参数表、使用要点、`focus` 可以只给句柄），PowerShell 那边也早实现了 —— 解析、每个动作前重新置前、句柄失效就报错。断开的是 Node 这一层：`STEP_FIELDS` 里没有它，`desktop_control` 的参数表和 schema 里也没有。于是照文档写必然失败（`focus requires a title, or an hwnd`）。现在三层都通了。
+- **`abortableWait` 在 abort 后永久挂起**。abort 监听器只 `clearTimeout`，而清掉定时器之后不会再有下一次 tick —— 而 tick 是唯一能结算这个 Promise 的地方。取消一次 `wait` 就留下一个永远等不到的 Promise。现在监听器自己结算。
+- **worker 崩溃时抛 TypeError**。close 处理器调用 `waiter.reject(...)`，而 waiter 对象只有 `settle`。执行中崩溃会让请求既不结算也不报错，异常还从事件回调里冒出来。现在 waiter 有了 `reject`，并走同一个 `finish` 做清理。
+- **取消粘贴会把剪贴板留在插件自己的文本上**。恢复代码原来在 `SendKeysText` 之后直落执行，`Assert-Alive` 一抛（Esc 或取消）就跳过 —— 用户复制的东西没了。现在恢复在 `finally` 里，文本优先（已验证可用的路径），没有文本时才尝试恢复完整数据对象。
+- **worker 用控制台编码读 stdin**。这台机器的控制台是 936，`[Console]::In` 就按 GBK 解码；任何客户端首帧带 UTF-8 BOM 时，BOM 变成两个乱码字符，合法的 base64 反而解不出来，每条会话的第一个请求都失败。改成显式 UTF-8 读取器（自动识别并去掉 BOM）。
+- **新增 `tools/fixes-smoke.mjs`**：11 条检查覆盖上面四处。用修复前的代码跑，它红 6 条（`wait` 挂死 4 秒、`hwnd` 被丢弃、剪贴板被改成粘贴文本、worker 被杀后静默返回 `failed=0`）；修复后全绿。
 **0.7.2** —— 让兼容性检查跟上宿主的 0.2.2 预发布。
 
 - **compat 工作流今天变红**：它装 `@deepseek-ai/dsh-*@next`，而 `next` 现在指向 **0.2.2-rc.1**；我们的 peer 区间只列了 0.2.0 和 0.2.1 的预发布，npm 的 semver 因此判为不匹配（`dsh gate=pass, pnpm=fail`）。

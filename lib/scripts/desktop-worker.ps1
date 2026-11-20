@@ -5,7 +5,7 @@
 # once and the process stays alive, so a request costs the work itself.
 #
 # Protocol, one request per line, one response per line, all UTF-8 JSON:
-#   in : base64(JSON)  { id?, kind?: 'action'|'capture', quit?, ... }
+#   in : base64(JSON), UTF-8, a leading BOM is ignored  { id?, kind?: 'action'|'capture', quit?, ... }
 #        kind defaults to 'action': { action, x, y, toX, toY, amount, text, key, title, button, hwnd, cancelFile, settleMs }
 #        kind 'capture':          { out, screen, window, region, includeCursor }
 #   out: JSON          { ok: true, ... } | { ok: false, error, cancelled? }
@@ -30,8 +30,14 @@ function Write-Protocol([object] $payload) {
 
 Write-Protocol ([ordered]@{ ok = $true; ready = $true; pid = $PID })
 
+# [Console]::In decodes with the console input encoding, which is the machine locale
+# (936 here) - not UTF-8. A client whose first frame carries a UTF-8 BOM then arrives as
+# two mojibake characters and the base64 decode of a valid frame fails. An explicit
+# UTF-8 reader strips the preamble it detects and decodes the rest as the protocol says.
+$inReader = New-Object System.IO.StreamReader([Console]::OpenStandardInput(), (New-Object System.Text.UTF8Encoding($false)), $true)
+
 while ($true) {
-    $line = [Console]::In.ReadLine()
+    $line = $inReader.ReadLine()
     if ($null -eq $line) { break }
     $line = $line.Trim()
     if ($line.Length -eq 0) { continue }
