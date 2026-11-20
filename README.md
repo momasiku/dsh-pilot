@@ -173,6 +173,12 @@ dsh plugin --profile <你的profile> add "file:E:\path\to\dsh-pilot"
 
 ### 最近改动
 
+**0.7.4** —— 浮层不会在进程退出后留在屏幕上。
+
+- **症状**：对话早就结束了，「DSH 正在操作你的电脑」那圈还在，按 Esc 也没用。
+- **根因**：`endTakeover` 的延迟隐藏用了 `setTimeout`，并且 `unref()` 过 —— 这是为了让定时器不拖住宿主退出。代价是：短命进程（一次性运行、测试脚本）在 8 秒到期**之前**退出时，定时器随进程消失，`show.txt` 就留在状态目录里。浮层在**另一个**进程里轮询这个文件，于是圈一直亮着，而已经没有进程会去撤掉它。
+- **改法**：注册 `process.once('exit')`，退出前同步删掉挂起的 `show.txt` 和残留的取消令牌。实测：动作后 `show.txt` 存在，进程 1 秒内退出后它消失了（linger 是 8 秒，只可能是退出钩子删的）。
+- **附带**：状态目录支持 `DSH_PILOT_SCRATCH_DIR`。原来所有进程共用 `%TEMP%\dsh-pilot`，测试套件跑一批点击就会点亮你正在看的那个圈 —— 现在 `fixes-smoke` 和 `sequence-smoke` 各用临时目录，跑完宿主目录里连 `show.txt` 都不会出现。
 **0.7.3** —— 四处可靠性修复，另修一个 worker 的输入编码问题。
 
 - **`hwnd` 从来没被真正传下去**。README 一直在承诺它（参数表、使用要点、`focus` 可以只给句柄），PowerShell 那边也早实现了 —— 解析、每个动作前重新置前、句柄失效就报错。断开的是 Node 这一层：`STEP_FIELDS` 里没有它，`desktop_control` 的参数表和 schema 里也没有。于是照文档写必然失败（`focus requires a title, or an hwnd`）。现在三层都通了。

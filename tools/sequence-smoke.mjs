@@ -17,6 +17,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+// The state directory is the rendezvous between every process running this plugin, so a
+// harness that drives the real desktop would otherwise raise the ring of a live session.
+process.env.DSH_PILOT_SCRATCH_DIR = mkdtempSync(join(tmpdir(), 'pilot-scratch-'));
+
 const appRoot = process.argv[2];
 if (appRoot === undefined) {
 	console.error('usage: node tools/sequence-smoke.mjs <app-root>');
