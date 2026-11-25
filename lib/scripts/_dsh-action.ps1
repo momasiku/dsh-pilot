@@ -527,10 +527,20 @@ switch ($action) {
     }
     'windows' {
         $query = $windowTitle.ToLowerInvariant()
+        # A title-only filter lets the input-method furniture through: 'Default IME' and
+        # 'MSCTFIME UI' are visible top-level windows with a name and a 0x0 rect, and every
+        # process that owns an IME owns a few. Measured on a 34-window desktop, 20 of the
+        # rows were this kind of noise - more text than the windows that mattered, on the
+        # action that is supposed to be the cheap way to find a handle.
+        $includeSystem = [bool] (Get-Param 'includeSystem')
+        $systemClasses = @('Default IME', 'MSCTFIME UI', 'MSCTFUI', 'GDI+ Window', 'IME')
         $list = @()
+        $filtered = 0
+        $total = 0
         foreach ($handle in [DshInput]::TopLevelWindows()) {
             $title = [DshInput]::WindowTitle($handle)
             if ($title.Length -eq 0) { continue }
+            $total += 1
             $owner = [uint32] 0
             $null = [DshInput]::GetWindowThreadProcessId($handle, [ref] $owner)
             $processName = Get-ProcessNameSafe $owner
@@ -540,6 +550,17 @@ switch ($action) {
                 if (-not ($inTitle -or $inProcess)) { continue }
             }
             $rect = [DshInput]::WindowRect($handle)
+            if (-not $includeSystem) {
+                # Area is the reliable tell: a window a person can act on has one, these
+                # message-only helpers do not. Four pixels rather than zero because the
+                # GDI+ bookkeeping window every PowerShell process owns is 1x1, and a
+                # zero-area test alone lets it through.
+                if (($rect.Right - $rect.Left) -le 4 -or ($rect.Bottom - $rect.Top) -le 4) { $filtered += 1; continue }
+                $className = [DshInput]::WindowClass($handle)
+                if ($systemClasses -contains $className) { $filtered += 1; continue }
+                # The class is not always the pretty name, so check the title prefix too.
+                if ($title -match '^(Default IME|MSCTFIME UI|MSCTFUI|GDI\+ Window)') { $filtered += 1; continue }
+            }
             $list += [ordered]@{
                 handle     = ('0x{0:X}' -f $handle.ToInt64())
                 title      = $title
@@ -557,8 +578,11 @@ switch ($action) {
             action           = 'windows'
             windows          = $list
             windowCount      = $list.Count
+            windowTotal      = $total
+            filteredOut      = $filtered
             foregroundWindow = $foreground
             foregroundTitle  = [DshInput]::ForegroundTitle()
+            foregroundHwnd   = ('0x{0:X}' -f ([DshInput]::GetForegroundWindow()).ToInt64())
             cursor           = [ordered]@{ x = ([DshInput]::Cursor()).X; y = ([DshInput]::Cursor()).Y }
             notes            = @()
             actedAt          = [DateTimeOffset]::Now.ToString('o')
@@ -592,6 +616,9 @@ $result = [ordered]@{
     ok               = $true
     action           = $action
     cursor           = [ordered]@{ x = $cursor.X; y = $cursor.Y }
+    # The handle, so a caller can address the same window again without re-deriving its
+    # identity from a title that changes while the work happens.
+    foregroundHwnd   = ('0x{0:X}' -f ([DshInput]::GetForegroundWindow()).ToInt64())
     foregroundTitle  = [DshInput]::ForegroundTitle()
     foregroundClass  = [DshInput]::ForegroundClass()
     foregroundProcess = Get-ProcessNameSafe ([uint32] [DshInput]::ForegroundPid())

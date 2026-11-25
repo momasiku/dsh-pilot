@@ -52,6 +52,10 @@ if ([string]::IsNullOrWhiteSpace($outPath)) { Write-ProbeError 'params.out (the 
 $screenMode = if ($params.PSObject.Properties.Name -contains 'screen' -and $null -ne $params.screen) { [string] $params.screen } else { 'primary' }
 $windowQuery = if ($params.PSObject.Properties.Name -contains 'window' -and $null -ne $params.window) { [string] $params.window } else { '' }
 $regionSpec = if ($params.PSObject.Properties.Name -contains 'region' -and $null -ne $params.region) { [string] $params.region } else { '' }
+# A handle, not a title. The title of the window being worked on changes as the work
+# happens (Notepad prefixes '*', a browser appends the page title), so a title captured
+# at the end of a batch frequently matches nothing by the time the frame is taken.
+$hwndRaw = if ($params.PSObject.Properties.Name -contains 'hwnd' -and $null -ne $params.hwnd) { [string] $params.hwnd } else { '' }
 $includeCursor = [bool] ($params.PSObject.Properties.Name -contains 'includeCursor' -and $params.includeCursor)
 $rulers = $true
 if ($params.PSObject.Properties.Name -contains 'rulers') { $rulers = [bool] $params.rulers }
@@ -96,25 +100,58 @@ $primaryIndex = 0
 for ($i = 0; $i -lt $screens.Count; $i++) { if ($screens[$i].primary) { $primaryIndex = $i; break } }
 $primaryDip = $screenBounds[$primaryIndex]
 
-# Resolution order: an explicit window, then a region, then the screen mode.
+# Resolution order: an explicit handle, an explicit window, then a region, then the
+# screen mode.
 $kind = $null
 $captureDip = $null
 $scale = $null
 
-if (-not [string]::IsNullOrWhiteSpace($windowQuery)) {
+if (-not [string]::IsNullOrWhiteSpace($hwndRaw)) {
+    $parsed = [long] 0
+    $hwndText = $hwndRaw.Trim()
+    $parsedOk = $false
+    if ($hwndText -match '^0[xX]([0-9a-fA-F]+)$') {
+        $parsedOk = [long]::TryParse($Matches[1], [System.Globalization.NumberStyles]::HexNumber, [System.Globalization.CultureInfo]::InvariantCulture, [ref] $parsed)
+    } else {
+        $parsedOk = [long]::TryParse($hwndText, [ref] $parsed)
+    }
+    if (-not $parsedOk -or $parsed -eq 0) { Write-ProbeError "hwnd must be a nonzero window handle such as 0x1094C (got '$hwndRaw')" }
+    $target = [IntPtr] $parsed
+    if (-not [DshInput]::IsWindow($target)) { Write-ProbeError "the target window (hwnd $hwndText) no longer exists" }
+    $rect = [DshProbe]::WindowRect($target)
+    $captureDip = [pscustomobject]@{ X = $rect.Left; Y = $rect.Top; Width = ($rect.Right - $rect.Left); Height = ($rect.Bottom - $rect.Top) }
+    if ($captureDip.Width -le 0 -or $captureDip.Height -le 0) { Write-ProbeError "the target window (hwnd $hwndText) has no on-screen area; it may be minimised" }
+    $kind = 'window'
+} elseif (-not [string]::IsNullOrWhiteSpace($windowQuery)) {
+    # EnumWindows, not Process.MainWindowHandle: an Electron, UWP or tray window often
+    # reports no main window handle at all, so the scan this used to do could not find a
+    # window that the windows and focus actions list perfectly well. Same enumeration as
+    # those, so the two cannot disagree about which windows exist.
     $needle = $windowQuery.ToLowerInvariant()
-    $candidate = $null
-    foreach ($process in (Get-Process | Where-Object { $_.MainWindowHandle -ne 0 })) {
-        $handle = $process.MainWindowHandle
+    $candidate = [IntPtr]::Zero
+    $names = @{}
+    foreach ($handle in [DshInput]::TopLevelWindows()) {
         if (-not [DshProbe]::IsWindowVisible($handle)) { continue }
         $title = [DshProbe]::WindowTitle($handle)
-        if ($title.ToLowerInvariant().Contains($needle) -or $process.ProcessName.ToLowerInvariant().Contains($needle)) {
-            if ($null -eq $candidate) { $candidate = $process }
+        if ([string]::IsNullOrWhiteSpace($title)) { continue }
+        $hit = $title.ToLowerInvariant().Contains($needle)
+        if (-not $hit) {
+            $owner = [uint32] 0
+            $null = [DshProbe]::GetWindowThreadProcessId($handle, [ref] $owner)
+            if (-not $names.ContainsKey($owner)) {
+                $name = ''
+                try { $name = (Get-Process -Id $owner -ErrorAction Stop).ProcessName } catch { $name = '' }
+                $names[$owner] = $name
+            }
+            $name = [string] $names[$owner]
+            if (-not [string]::IsNullOrWhiteSpace($name)) { $hit = $name.ToLowerInvariant().Contains($needle) }
         }
+        if (-not $hit) { continue }
+        $candidate = $handle
+        if ([DshProbe]::GetForegroundWindow() -eq $handle) { break }
     }
-    if ($null -eq $candidate) { Write-ProbeError "no visible top-level window matches '$windowQuery'" }
-    $handle = $candidate.MainWindowHandle
-    $rect = [DshProbe]::WindowRect($handle)
+    if ($candidate -eq [IntPtr]::Zero) { Write-ProbeError "no visible top-level window matches '$windowQuery'" }
+    $rect = [DshProbe]::WindowRect($candidate)
     $captureDip = [pscustomobject]@{ X = $rect.Left; Y = $rect.Top; Width = ($rect.Right - $rect.Left); Height = ($rect.Bottom - $rect.Top) }
     $kind = 'window'
 } elseif (-not [string]::IsNullOrWhiteSpace($regionSpec)) {

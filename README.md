@@ -1,4 +1,4 @@
-<img src="https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/banner.webp" alt="dsh-pilot — desktop control for DeepSeek Harness: hands and eyes on the whole machine" width="100%">
+﻿<img src="https://raw.githubusercontent.com/momasiku/dsh-pilot/main/assets/banner.webp" alt="dsh-pilot — desktop control for DeepSeek Harness: hands and eyes on the whole machine" width="100%">
 
 # dsh-pilot
 
@@ -173,6 +173,13 @@ dsh plugin --profile <你的profile> add "file:E:\path\to\dsh-pilot"
 
 ### 最近改动
 
+**0.7.5** —— 三件同一类的事：该看的图别丢、不该看的图别付钱、便宜的路径别被噪声撑贵。
+
+- **末端帧按句柄抓，不再按标题找窗口**（issue #8）。一批动作打完整批之后，`desktop_sequence` 拿「最后一步看到的标题」去把窗口找回来，而那个标题正是**工作过程中会变的东西** —— 记事本打完第一行就变成 `*内容 - 记事本`，标题查询落空，于是四步全 `ok`、图没了。现在步骤结果带上 `foregroundHwnd`，末帧优先按句柄抓；句柄失效回退标题，再失效回退全屏，并在结果里写 `captureFallback`，**丢帧不再无声**。抓帧的窗口搜索也从 `Process.MainWindowHandle` 换成 EnumWindows —— 和 `focus` 用同一套枚举，不再出现「focus 找得到、抓帧找不到」。
+- **`windows` 默认过滤输入法窗口**（issue #9）。原来只跳过没有标题的窗口，于是 `Default IME`、`MSCTFIME UI`、`GDI+ Window`（PowerShell 进程里 1×1 的那个）全都列出来。这台机器实测：39 个窗口里 25 个是噪声，真正能用的只有 14 个。现在按「尺寸 ≤ 4 像素」「类名在名单里」「标题前缀是家具」三条丢弃，并报 `filteredOut`/`windowTotal`；需要全量时传 `includeSystem: true`。
+- **`desktop_control` 的截图改成 opt-in**（issue #6）。一帧在 1024×768 是约 1050 token，2560×1600 是约 5461 token，而旁边的文本通常已经说明了结果。现在只有 `capture: true` 才截图，同时不再付那 750 ms 的 settle。`desktop_sequence` **保持末帧默认** —— 一批只有这一帧，它是整批唯一的验收证据。
+- 顺带：`screen_view` 也接受 `hwnd`；`desktop_control` 传了 `hwnd` 时，它的 `capture: true` 抓的是**那个窗口**，而不是「当前前台」。
+- **新增 `tools/frame-smoke.mjs`**：18 条检查，覆盖按句柄抓帧、陈旧句柄报错、一批的末帧、窗口中途消失后的回退、`windows` 过滤与 `includeSystem`、以及截图的 opt-in。
 **0.7.4** —— 浮层不会在进程退出后留在屏幕上。
 
 - **症状**：对话早就结束了，「DSH 正在操作你的电脑」那圈还在，按 Esc 也没用。
@@ -273,7 +280,7 @@ npm 上的包名带 scope，是因为 `dsh-pilot` 这个名字在 npm 上属于�
 - 先 `desktop_control { action: "windows" }` 看清有哪些窗口、哪个在前台，再动手。
 - 多步任务优先用 `desktop_sequence`：把"聚焦 → 点击 → 输入 → 回车"写成一次调用。
 - 打字支持多行与中文（走剪贴板一次粘贴，之后恢复剪贴板）。
-- 想更省 token：`capture: "none"` 不附图，或依赖"未变化不重发"；想看得更清：`rulers: true`（默认开）。
+- `desktop_control` **默认不附图**：要画面就传 `capture: true`。`desktop_sequence` 仍默认给一张末帧（一批一帧，是整批唯一的验收证据），不要就传 `capture: "none"`。想看得更清：`rulers: true`（默认开）。
 - 常用设置（`captureRetention`、`settleMs`、`stepSettleMs`、`maxSequenceSteps`、`useWorker`、`rulers`）写在配置行里，见上面的 Settings 一节。
 
 ## 常见问题
@@ -687,6 +694,7 @@ browser-automation plugin. **The repository is still `momasiku/dsh-pilot`.**
 | --- | --- | --- |
 | `screen` | string | `primary` (default), `all` (whole virtual desktop), or a 0-based monitor index |
 | `window` | string | case-insensitive substring of a window title or process name; frames that window |
+| `hwnd` | string | frame this window handle instead of matching a title (`0x1094C` or decimal) |
 | `region` | string | crop as `x,y,width,height` in physical screen pixels |
 | `includeCursor` | boolean | draw a crosshair at the pointer (default `true`) |
 | `rulers` | boolean | draw the coordinate rulers (default: the `rulers` setting) |
@@ -710,12 +718,13 @@ coordinate contract for that frame.
 | `button` | string | `left` (default), `right`, `middle` |
 | `title` | string | window title or process substring; required by `focus`, filters `windows` |
 | `hwnd` | string | lock input to one window handle (`0x1094C` or decimal) |
-| `capture` | boolean | capture a fresh frame after acting (default `true`) |
+| `capture` | boolean | capture a fresh frame after acting; **opt-in** (default `false`). A frame costs ~1050 tokens at 1024x768 and ~5461 at 2560x1600, and the text beside it usually says what happened |
 | `settleMs` | integer | wait before that capture so the screen can repaint (default 750) |
 | `forceImage` | boolean | attach the frame even when it repeats the previous frame of the session |
 | `target` | integer | pointer actions: click the control at this index from a `controls` listing instead of `x`/`y` |
 | `includeValues` | boolean | `controls`: also return each control's value (default `false`; passwords masked) |
 | `meaningfulOnly` | boolean | `controls`: only operable roles (default `true`) |
+| `includeSystem` | boolean | `windows`: also list input-method and zero-size helpers (`Default IME`, `MSCTFIME UI`, `GDI+ Window`). Dropped by default; the count is reported as `filteredOut` |
 | `tolerant` | boolean | `focus`: record a note instead of failing when Windows refuses the foreground |
 
 `type` delivers text as **one paste** (clipboard set, `Ctrl+V`, clipboard restored), so
