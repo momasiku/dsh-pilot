@@ -93,6 +93,9 @@ if (win === undefined) {
 const byHandle = await view.execute({ hwnd: win.handle }, exec);
 check('screen_view frames a window by handle', byHandle.kind === 'window' && byHandle.imageWidth < 900 && byHandle.imageHeight < 600, byHandle.kind + ' ' + byHandle.imageWidth + 'x' + byHandle.imageHeight);
 
+const front = await view.execute({ foreground: true }, exec);
+check('screen_view frames the foreground window on request', front.kind === 'window' && front.imageWidth > 100, front.kind + ' ' + front.imageWidth + 'x' + front.imageHeight);
+
 let stale = '';
 try { await view.execute({ hwnd: '0x7FFFFFF0' }, exec); stale = 'accepted'; } catch (error) { stale = error.message; }
 check('a stale handle is refused by name', /no longer exists/.test(stale), String(stale).slice(0, 70));
@@ -115,6 +118,7 @@ const closed = await pending;
 check('the batch still finished', closed.executed === 2 && closed.failed === 0, 'executed=' + closed.executed + ' failed=' + closed.failed);
 check('a frame is still returned after the window is gone', closed.capture?.image !== undefined, closed.capture === undefined ? 'none' : closed.capture.kind);
 check('the fallback is reported, not silent', typeof closed.captureFallback === 'string' && /could not be framed/.test(closed.captureFallback), String(closed.captureFallback ?? '').slice(0, 90));
+check('the fallback frames a window rather than the whole screen', /foreground window|last title/.test(String(closed.captureFallback ?? '')) ? closed.capture?.kind === 'window' : true, closed.capture?.kind + ' / ' + String(closed.captureFallback ?? '').slice(0, 70));
 
 const plain = await control.execute({ action: 'windows', capture: false }, exec);
 const rows = plain.windows ?? [];

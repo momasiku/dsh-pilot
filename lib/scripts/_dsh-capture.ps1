@@ -56,6 +56,10 @@ $regionSpec = if ($params.PSObject.Properties.Name -contains 'region' -and $null
 # happens (Notepad prefixes '*', a browser appends the page title), so a title captured
 # at the end of a batch frequently matches nothing by the time the frame is taken.
 $hwndRaw = if ($params.PSObject.Properties.Name -contains 'hwnd' -and $null -ne $params.hwnd) { [string] $params.hwnd } else { '' }
+# Frame whatever is in front *now*. A batch that launched an application often finds its
+# last remembered handle dead (Windows replaces the window while the app loads), and the
+# window the person is looking at is still the right answer.
+$foregroundMode = [bool] ($params.PSObject.Properties.Name -contains 'foreground' -and $params.foreground)
 $includeCursor = [bool] ($params.PSObject.Properties.Name -contains 'includeCursor' -and $params.includeCursor)
 $rulers = $true
 if ($params.PSObject.Properties.Name -contains 'rulers') { $rulers = [bool] $params.rulers }
@@ -153,6 +157,13 @@ if (-not [string]::IsNullOrWhiteSpace($hwndRaw)) {
     if ($candidate -eq [IntPtr]::Zero) { Write-ProbeError "no visible top-level window matches '$windowQuery'" }
     $rect = [DshProbe]::WindowRect($candidate)
     $captureDip = [pscustomobject]@{ X = $rect.Left; Y = $rect.Top; Width = ($rect.Right - $rect.Left); Height = ($rect.Bottom - $rect.Top) }
+    $kind = 'window'
+} elseif ($foregroundMode) {
+    $target = [DshProbe]::GetForegroundWindow()
+    if ($target -eq [IntPtr]::Zero -or -not [DshInput]::IsWindow($target)) { Write-ProbeError 'there is no foreground window to frame' }
+    $rect = [DshProbe]::WindowRect($target)
+    $captureDip = [pscustomobject]@{ X = $rect.Left; Y = $rect.Top; Width = ($rect.Right - $rect.Left); Height = ($rect.Bottom - $rect.Top) }
+    if ($captureDip.Width -le 0 -or $captureDip.Height -le 0) { Write-ProbeError 'the foreground window has no on-screen area; it may be minimised' }
     $kind = 'window'
 } elseif (-not [string]::IsNullOrWhiteSpace($regionSpec)) {
     $parts = @($regionSpec -split '[,\s]+' | Where-Object { $_ -ne '' })
