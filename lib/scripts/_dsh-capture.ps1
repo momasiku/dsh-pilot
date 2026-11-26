@@ -122,6 +122,12 @@ if (-not [string]::IsNullOrWhiteSpace($hwndRaw)) {
     if (-not $parsedOk -or $parsed -eq 0) { Write-ProbeError "hwnd must be a nonzero window handle such as 0x1094C (got '$hwndRaw')" }
     $target = [IntPtr] $parsed
     if (-not [DshInput]::IsWindow($target)) { Write-ProbeError "the target window (hwnd $hwndText) no longer exists" }
+    # The shell desktop is a window whose rect is the whole screen, so framing it looks
+    # exactly like framing the monitor - and a batch that launched an application often
+    # remembers the desktop as "the foreground" because the launcher closed first. Refuse
+    # it, so the caller's fallback chain moves on to the window that is actually in front.
+    $targetClass = [DshProbe]::WindowClass($target)
+    if ($targetClass -eq 'Progman' -or $targetClass -eq 'WorkerW') { Write-ProbeError "hwnd $hwndText is the shell desktop, not a window worth framing; use foreground or screen" }
     $rect = [DshProbe]::WindowRect($target)
     $captureDip = [pscustomobject]@{ X = $rect.Left; Y = $rect.Top; Width = ($rect.Right - $rect.Left); Height = ($rect.Bottom - $rect.Top) }
     if ($captureDip.Width -le 0 -or $captureDip.Height -le 0) { Write-ProbeError "the target window (hwnd $hwndText) has no on-screen area; it may be minimised" }

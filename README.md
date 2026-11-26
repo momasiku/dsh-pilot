@@ -173,6 +173,11 @@ dsh plugin --profile <你的profile> add "file:E:\path\to\dsh-pilot"
 
 ### 最近改动
 
+**0.7.7** —— 桌面窗口不算可抓帧的目标。
+
+- 0.7.6 自检时又发现一格：`win+r → notepad → 回车 → 等 2 秒`，回车那一刻前台还是**桌面**（Program Manager），记事本一秒后才出来。于是末帧按句柄抓到的「窗口」是桌面 —— 它的矩形就是整屏，视觉上和全屏没有任何区别，`capture.kind` 却诚实地写着 `window`。
+- 现在抓帧脚本认出 `Progman` / `WorkerW` 两个 shell 桌面类，直接报 `hwnd 0x… is the shell desktop, not a window worth framing`，让调用方的回退链继续往下走（前台窗口 → 全屏）。
+- `frame-smoke` 增加一条断言：拿 Program Manager 的句柄去抓帧必须被拒。21 条检查。
 **0.7.6** —— 末帧的最后一格：句柄失效时抓前台窗口，而不是全屏。
 
 - 0.7.5 之后自检发现的：**「启动一个应用然后看一眼」** 这条最常见的路径，末帧会退成整张屏幕。原因是 Windows 在应用加载时**会换掉窗口句柄** —— 实测 `desktop_sequence` 里 `win+r → notepad → 回车 → 等 2 秒`，最后一步拿到的句柄 `0x1A01EA` 在抓帧时已经不存在，而它对应的记事本正在前台、句柄是 `0x2401F4`。

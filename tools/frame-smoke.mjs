@@ -120,6 +120,16 @@ check('a frame is still returned after the window is gone', closed.capture?.imag
 check('the fallback is reported, not silent', typeof closed.captureFallback === 'string' && /could not be framed/.test(closed.captureFallback), String(closed.captureFallback ?? '').slice(0, 90));
 check('the fallback frames a window rather than the whole screen', /foreground window|last title/.test(String(closed.captureFallback ?? '')) ? closed.capture?.kind === 'window' : true, closed.capture?.kind + ' / ' + String(closed.captureFallback ?? '').slice(0, 70));
 
+// The shell desktop is a window whose rect is the screen: framing it looks like
+// framing the monitor, and a batch that launched an app often remembers the desktop as
+// "the foreground" because the launcher closed first.
+const desk = (await control.execute({ action: 'windows', includeSystem: true, capture: false }, exec)).windows?.find((w) => w.title === 'Program Manager');
+let deskRefusal = '';
+if (desk === undefined) { deskRefusal = 'no Program Manager window to test'; } else {
+  try { await view.execute({ hwnd: desk.handle }, exec); deskRefusal = 'accepted'; } catch (error) { deskRefusal = error.message; }
+}
+check('the shell desktop is refused as a frame target', /shell desktop/.test(deskRefusal), String(deskRefusal).slice(0, 80));
+
 const plain = await control.execute({ action: 'windows', capture: false }, exec);
 const rows = plain.windows ?? [];
 const furniture = rows.filter((w) => /Default IME|MSCTFIME UI|MSCTFUI|GDI\+ Window/.test(String(w.title ?? '')) || /,[0-9-]+,0,0$/.test(String(w.bounds ?? '')));
